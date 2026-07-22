@@ -1,11 +1,40 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bus, LogOut, LogIn } from "lucide-react";
+import { Bus, LogOut, LogIn, Moon, Sun } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-const COLORS = { fleet: "#1F4E78", ink: "#14324D", line: "#E4E9EF" };
+function ThemeToggle() {
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("theme");
+    const isDark = saved === "dark";
+    setDark(isDark);
+    document.documentElement.classList.toggle("dark", isDark);
+  }, []);
+
+  const toggle = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle("dark", next);
+    window.localStorage.setItem("theme", next ? "dark" : "light");
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      aria-label="Basculer le thème clair / sombre"
+      className="flex items-center justify-center w-8 h-8 rounded-lg border border-[var(--border-line)] text-[var(--text-ink)]"
+    >
+      {dark ? <Sun size={15} /> : <Moon size={15} />}
+    </button>
+  );
+}
+
+const COLORS = { fleet: "var(--fleet)", ink: "var(--text-ink)", line: "var(--border-line)" };
 
 export default function NavBar({ user }) {
   const router = useRouter();
@@ -19,7 +48,7 @@ export default function NavBar({ user }) {
 
   return (
     <header
-      className="w-full px-6 md:px-10 py-4 flex flex-wrap items-center justify-between gap-4 border-b bg-white"
+      className="w-full px-6 md:px-10 py-4 flex flex-wrap items-center justify-between gap-4 border-b bg-[var(--bg-surface)]"
       style={{ borderColor: COLORS.line }}
     >
       <Link href="/" className="flex items-center gap-3">
@@ -38,6 +67,7 @@ export default function NavBar({ user }) {
       </Link>
 
       <nav className="flex items-center gap-2 text-sm font-medium">
+        <ThemeToggle />
         <Link href="/" className="px-3 py-1.5 rounded-lg" style={{ color: COLORS.ink }}>
           Dashboard
         </Link>
@@ -55,7 +85,7 @@ export default function NavBar({ user }) {
             <button
               onClick={logout}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white"
-              style={{ backgroundColor: "#B3452C" }}
+              style={{ backgroundColor: "var(--red)" }}
             >
               <LogOut size={14} /> Déconnexion
             </button>

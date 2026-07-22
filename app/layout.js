@@ -15,6 +15,13 @@ export default async function RootLayout({ children }) {
 
   return (
     <html lang="fr">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(localStorage.getItem('theme')==='dark'){document.documentElement.classList.add('dark')}}catch(e){}`,
+          }}
+        />
+      </head>
       <body style={{ fontFamily: "'Inter', ui-sans-serif, system-ui" }}>
         <NavBar user={user} />
         {children}

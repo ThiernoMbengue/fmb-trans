@@ -5,18 +5,18 @@ import { Save, Pencil, Trash2, X, Loader2, AlertCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { saveEntry, deleteEntry } from "./actions";
 
-const COLORS = { ink: "#14324D", fleet: "#1F4E78", green: "#1E7A5F", red: "#B3452C", line: "#E4E9EF" };
+const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)", green: "var(--green)", red: "var(--red)", line: "var(--border-line)" };
 const inputClass =
-  "w-full text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1F4E78]/30";
+  "w-full text-sm bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30";
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString("fr-FR").replace(/,/g, " ");
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 function Field({ label, children, hint }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-slate-500">{label}</span>
+      <span className="text-xs font-medium text-[var(--text-slate)]">{label}</span>
       {children}
-      {hint && <span className="text-[11px] text-slate-400">{hint}</span>}
+      {hint && <span className="text-[11px] text-[var(--text-slate-light)]">{hint}</span>}
     </label>
   );
 }
@@ -136,7 +136,7 @@ export default function SaisieClient({ vehicles }) {
 
   if (!vehicles.length) {
     return (
-      <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto text-sm text-slate-400">
+      <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto text-sm text-[var(--text-slate-light)]">
         Aucun véhicule enregistré. Ajoute d'abord un véhicule dans l'onglet « Véhicules ».
       </main>
     );
@@ -158,25 +158,25 @@ export default function SaisieClient({ vehicles }) {
         <select
           value={vehicleId || ""}
           onChange={(e) => { setVehicleId(e.target.value); setEditingDate(null); }}
-          className="text-sm font-medium bg-white border border-slate-200 rounded-lg px-3 py-2"
+          className="text-sm font-medium bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2"
         >
           {vehicles.map((v) => (
             <option key={v.id} value={v.id}>{v.marque} — {v.immatriculation}</option>
           ))}
         </select>
         {vehicle && (
-          <div className="text-xs text-slate-400">{vehicle.proprietaire} · chauffeur {vehicle.chauffeur}</div>
+          <div className="text-xs text-[var(--text-slate-light)]">{vehicle.proprietaire} · chauffeur {vehicle.chauffeur}</div>
         )}
       </div>
 
       {form && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5 md:p-6">
+        <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6">
           <div className="flex items-center justify-between mb-5">
             <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>
               {editingDate ? `Modifier la saisie du ${editingDate}` : "Nouvelle saisie du jour"}
             </div>
             {editingDate && (
-              <button onClick={cancelEdit} className="text-xs text-slate-400 flex items-center gap-1">
+              <button onClick={cancelEdit} className="text-xs text-[var(--text-slate-light)] flex items-center gap-1">
                 <X size={13} /> Annuler
               </button>
             )}
@@ -230,29 +230,29 @@ export default function SaisieClient({ vehicles }) {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 mt-6 overflow-hidden">
+      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] mt-6 overflow-hidden">
         <div className="px-5 py-4 text-sm font-semibold border-b" style={{ color: COLORS.ink, borderColor: COLORS.line }}>
           Dernières saisies
         </div>
         {loading ? (
-          <div className="px-5 py-6 text-sm text-slate-400 flex items-center gap-2">
+          <div className="px-5 py-6 text-sm text-[var(--text-slate-light)] flex items-center gap-2">
             <Loader2 size={14} className="animate-spin" /> Chargement…
           </div>
         ) : recent.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-slate-400">Aucune saisie pour ce véhicule.</div>
+          <div className="px-5 py-6 text-sm text-[var(--text-slate-light)]">Aucune saisie pour ce véhicule.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm font-mono">
               <thead>
-                <tr style={{ backgroundColor: "#F5F7FA" }}>
+                <tr style={{ backgroundColor: "var(--bg-page)" }}>
                   {["Date", "Recette", "Gazoil", "Autres", "Net versé", ""].map((h) => (
-                    <th key={h} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-slate-500">{h}</th>
+                    <th key={h} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {recent.map((e) => (
-                  <tr key={e.date} className="border-t" style={{ borderColor: COLORS.line, color: e.recette === 0 ? "#B7C0CA" : COLORS.ink }}>
+                  <tr key={e.date} className="border-t" style={{ borderColor: COLORS.line, color: e.recette === 0 ? "var(--text-slate-light)" : COLORS.ink }}>
                     <td className="px-5 py-2">{e.date}</td>
                     <td className="px-5 py-2">{fmt(e.recette)}</td>
                     <td className="px-5 py-2">{fmt(e.gazoil)}</td>
@@ -260,8 +260,8 @@ export default function SaisieClient({ vehicles }) {
                     <td className="px-5 py-2 font-semibold">{fmt(e.net)}</td>
                     <td className="px-5 py-2">
                       <div className="flex items-center gap-2 font-sans">
-                        <button onClick={() => startEdit(e)} className="text-slate-400 hover:text-[#1F4E78]"><Pencil size={14} /></button>
-                        <button onClick={() => onDelete(e.date)} className="text-slate-400 hover:text-[#B3452C]"><Trash2 size={14} /></button>
+                        <button onClick={() => startEdit(e)} className="text-[var(--text-slate-light)] hover:text-[var(--fleet)]"><Pencil size={14} /></button>
+                        <button onClick={() => onDelete(e.date)} className="text-[var(--text-slate-light)] hover:text-[var(--red)]"><Trash2 size={14} /></button>
                       </div>
                     </td>
                   </tr>

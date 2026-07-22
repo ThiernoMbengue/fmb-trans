@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import VehicleForm from "./vehicle-form";
 import DeleteButton from "./delete-button";
 
-const COLORS = { ink: "#14324D", line: "#E4E9EF" };
+const COLORS = { ink: "var(--text-ink)", line: "var(--border-line)" };
 
 export default async function VehiculesPage() {
   const supabase = createClient();
@@ -19,12 +19,12 @@ export default async function VehiculesPage() {
 
       <VehicleForm />
 
-      <div className="bg-white rounded-xl border border-slate-200 mt-6 overflow-hidden">
+      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] mt-6 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr style={{ backgroundColor: "#F5F7FA" }}>
+            <tr style={{ backgroundColor: "var(--bg-page)" }}>
               {["Marque", "Immatriculation", "Propriétaire", "Chauffeur", ""].map((h) => (
-                <th key={h} className="text-left px-4 py-2.5 font-medium text-xs uppercase tracking-wide text-slate-500">
+                <th key={h} className="text-left px-4 py-2.5 font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">
                   {h}
                 </th>
               ))}

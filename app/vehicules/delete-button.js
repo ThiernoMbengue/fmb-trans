@@ -15,7 +15,7 @@ export default function DeleteButton({ id }) {
         }
       }}
       disabled={pending}
-      className="text-slate-400 hover:text-[#B3452C] disabled:opacity-40"
+      className="text-[var(--text-slate-light)] hover:text-[var(--red)] disabled:opacity-40"
     >
       <Trash2 size={14} />
     </button>

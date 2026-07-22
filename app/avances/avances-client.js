@@ -5,9 +5,9 @@ import { Save, Trash2, Loader2, AlertCircle, HandCoins, TriangleAlert } from "lu
 import { createClient } from "@/lib/supabase/client";
 import { saveAvance, deleteAvance } from "./actions";
 
-const COLORS = { ink: "#14324D", fleet: "#1F4E78", green: "#1E7A5F", red: "#B3452C", amber: "#C9862B", line: "#E4E9EF" };
+const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)", green: "var(--green)", red: "var(--red)", amber: "var(--amber)", line: "var(--border-line)" };
 const inputClass =
-  "w-full text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1F4E78]/30";
+  "w-full text-sm bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30";
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString("fr-FR").replace(/,/g, " ");
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -19,7 +19,7 @@ const TYPE_LABEL = {
 function Field({ label, children }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-slate-500">{label}</span>
+      <span className="text-xs font-medium text-[var(--text-slate)]">{label}</span>
       {children}
     </label>
   );
@@ -91,7 +91,7 @@ export default function AvancesClient({ vehicles }) {
 
   if (!vehicles.length) {
     return (
-      <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto text-sm text-slate-400">
+      <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto text-sm text-[var(--text-slate-light)]">
         Aucun véhicule enregistré. Ajoute d'abord un véhicule dans l'onglet « Véhicules ».
       </main>
     );
@@ -112,7 +112,7 @@ export default function AvancesClient({ vehicles }) {
       <h1 className="text-lg font-semibold mb-1" style={{ color: COLORS.ink }}>
         Avances & dépenses imprévues
       </h1>
-      <p className="text-xs text-slate-400 mb-6">
+      <p className="text-xs text-[var(--text-slate-light)] mb-6">
         Argent donné au propriétaire en dehors du versement quotidien, ou dépenses non prévues sur le véhicule.
       </p>
 
@@ -120,35 +120,35 @@ export default function AvancesClient({ vehicles }) {
         <select
           value={vehicleId || ""}
           onChange={(e) => setVehicleId(e.target.value)}
-          className="text-sm font-medium bg-white border border-slate-200 rounded-lg px-3 py-2"
+          className="text-sm font-medium bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2"
         >
           {vehicles.map((v) => (
             <option key={v.id} value={v.id}>{v.marque} — {v.immatriculation}</option>
           ))}
         </select>
         {vehicle && (
-          <div className="text-xs text-slate-400">{vehicle.proprietaire} · chauffeur {vehicle.chauffeur}</div>
+          <div className="text-xs text-[var(--text-slate-light)]">{vehicle.proprietaire} · chauffeur {vehicle.chauffeur}</div>
         )}
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="relative bg-white rounded-xl border border-slate-200 p-4 overflow-hidden">
+        <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
           <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: COLORS.fleet }} />
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500 pl-2">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
             <HandCoins size={14} color={COLORS.fleet} /> Avances au propriétaire
           </div>
           <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: COLORS.ink }}>{fmt(totals.avance)} F</div>
         </div>
-        <div className="relative bg-white rounded-xl border border-slate-200 p-4 overflow-hidden">
+        <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
           <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: COLORS.amber }} />
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500 pl-2">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
             <TriangleAlert size={14} color={COLORS.amber} /> Dépenses imprévues
           </div>
           <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: COLORS.ink }}>{fmt(totals.depense)} F</div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 p-5 md:p-6">
+      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6">
         <div className="text-sm font-semibold mb-5" style={{ color: COLORS.ink }}>Nouvelle entrée</div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Date">
@@ -180,23 +180,23 @@ export default function AvancesClient({ vehicles }) {
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 mt-6 overflow-hidden">
+      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] mt-6 overflow-hidden">
         <div className="px-5 py-4 text-sm font-semibold border-b" style={{ color: COLORS.ink, borderColor: COLORS.line }}>
           Historique
         </div>
         {loading ? (
-          <div className="px-5 py-6 text-sm text-slate-400 flex items-center gap-2">
+          <div className="px-5 py-6 text-sm text-[var(--text-slate-light)] flex items-center gap-2">
             <Loader2 size={14} className="animate-spin" /> Chargement…
           </div>
         ) : rows.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-slate-400">Aucune entrée pour ce véhicule.</div>
+          <div className="px-5 py-6 text-sm text-[var(--text-slate-light)]">Aucune entrée pour ce véhicule.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr style={{ backgroundColor: "#F5F7FA" }}>
+                <tr style={{ backgroundColor: "var(--bg-page)" }}>
                   {["Date", "Type", "Montant", "Note", ""].map((h) => (
-                    <th key={h} className="text-left px-5 py-2.5 font-medium text-xs uppercase tracking-wide text-slate-500">{h}</th>
+                    <th key={h} className="text-left px-5 py-2.5 font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -208,7 +208,7 @@ export default function AvancesClient({ vehicles }) {
                       <span
                         className="text-xs font-medium px-2 py-0.5 rounded-full"
                         style={{
-                          backgroundColor: r.type === "avance_proprietaire" ? "#1F4E7815" : "#C9862B15",
+                          backgroundColor: r.type === "avance_proprietaire" ? "var(--fleet)15" : "var(--amber)15",
                           color: r.type === "avance_proprietaire" ? COLORS.fleet : COLORS.amber,
                         }}
                       >
@@ -216,9 +216,9 @@ export default function AvancesClient({ vehicles }) {
                       </span>
                     </td>
                     <td className="px-5 py-2 font-mono font-semibold">{fmt(r.montant)} F</td>
-                    <td className="px-5 py-2 text-slate-500">{r.note}</td>
+                    <td className="px-5 py-2 text-[var(--text-slate)]">{r.note}</td>
                     <td className="px-5 py-2">
-                      <button onClick={() => onDelete(r.id)} className="text-slate-400 hover:text-[#B3452C]"><Trash2 size={14} /></button>
+                      <button onClick={() => onDelete(r.id)} className="text-[var(--text-slate-light)] hover:text-[var(--red)]"><Trash2 size={14} /></button>
                     </td>
                   </tr>
                 ))}

@@ -4,6 +4,34 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap');
 
-html, body {
-  background-color: #F5F7FA;
+:root {
+  --bg-page: #F5F7FA;
+  --bg-surface: #ffffff;
+  --border-line: #E4E9EF;
+  --text-ink: #14324D;
+  --text-slate: #5B6B7A;
+  --text-slate-light: #94A3B8;
+  --fleet: #1F4E78;
+  --amber: #C9862B;
+  --green: #1E7A5F;
+  --red: #B3452C;
 }
+
+html.dark {
+  --bg-page: #0B1220;
+  --bg-surface: #131B2A;
+  --border-line: #223047;
+  --text-ink: #E8EDF3;
+  --text-slate: #94A3B8;
+  --text-slate-light: #64748B;
+  --fleet: #5B9BD5;
+  --amber: #D89B4A;
+  --green: #34A583;
+  --red: #D9694A;
+}
+
+html, body {
+  background-color: var(--bg-page);
+  color: var(--text-ink);
+}
+

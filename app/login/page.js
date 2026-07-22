@@ -1,7 +1,7 @@
 import { login } from "./actions";
 import { AlertCircle } from "lucide-react";
 
-const COLORS = { ink: "#14324D", fleet: "#1F4E78" };
+const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)" };
 
 export default function LoginPage({ searchParams }) {
   const error = searchParams?.error;
@@ -9,16 +9,16 @@ export default function LoginPage({ searchParams }) {
 
   return (
     <main className="min-h-[80vh] flex items-center justify-center px-4">
-      <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl p-6">
+      <div className="w-full max-w-sm bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl p-6">
         <h1 className="text-lg font-semibold mb-1" style={{ color: COLORS.ink }}>
           Connexion
         </h1>
-        <p className="text-xs text-slate-400 mb-5">
+        <p className="text-xs text-[var(--text-slate-light)] mb-5">
           Réservé aux personnes autorisées à saisir des versements.
         </p>
 
         {error && (
-          <div className="flex items-center gap-2 text-xs text-white bg-[#B3452C] rounded-lg px-3 py-2 mb-4">
+          <div className="flex items-center gap-2 text-xs text-white bg-[var(--red)] rounded-lg px-3 py-2 mb-4">
             <AlertCircle size={14} /> {error}
           </div>
         )}
@@ -26,21 +26,21 @@ export default function LoginPage({ searchParams }) {
         <form action={login} className="flex flex-col gap-3">
           <input type="hidden" name="next" value={next} />
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-slate-500">Email</span>
+            <span className="text-xs font-medium text-[var(--text-slate)]">Email</span>
             <input
               type="email"
               name="email"
               required
-              className="w-full text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1F4E78]/30"
+              className="w-full text-sm bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30"
             />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-slate-500">Mot de passe</span>
+            <span className="text-xs font-medium text-[var(--text-slate)]">Mot de passe</span>
             <input
               type="password"
               name="password"
               required
-              className="w-full text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1F4E78]/30"
+              className="w-full text-sm bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30"
             />
           </label>
           <button
