@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bus, LogOut, LogIn, Moon, Sun } from "lucide-react";
+import { LogOut, LogIn, Moon, Sun } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 function ThemeToggle() {
@@ -51,13 +51,8 @@ export default function NavBar({ user }) {
       className="w-full px-6 md:px-10 py-4 flex flex-wrap items-center justify-between gap-4 border-b bg-[var(--bg-surface)]"
       style={{ borderColor: COLORS.line }}
     >
-      <Link href="/" className="flex items-center gap-3">
-        <div
-          className="w-9 h-9 rounded-lg flex items-center justify-center"
-          style={{ backgroundColor: COLORS.fleet }}
-        >
-          <Bus size={18} color="#fff" strokeWidth={2.25} />
-        </div>
+      <Link href="/" className="flex items-center gap-2.5">
+        <img src="/logo.png" alt="FMB Trans-Mobilité Services" className="h-8 w-auto" />
         <div
           className="text-sm font-semibold tracking-tight"
           style={{ fontFamily: "'Space Grotesk','Inter',sans-serif", color: COLORS.ink }}
