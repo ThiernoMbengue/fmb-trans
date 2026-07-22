@@ -117,6 +117,12 @@ export default function DashboardClient({ vehicles }) {
 
   const vehicle = vehicles.find((v) => v.id === vehicleId);
 
+  const recentEntries = useMemo(() => {
+    return [...entries]
+      .sort((a, b) => (b.created_at || b.date).localeCompare(a.created_at || a.date))
+      .slice(0, 7);
+  }, [entries]);
+
   if (!vehicles.length) {
     return (
       <main className="px-6 md:px-10 py-8 max-w-5xl mx-auto text-sm text-[var(--text-slate-light)]">
@@ -243,6 +249,41 @@ export default function DashboardClient({ vehicles }) {
             </ResponsiveContainer>
           </div>
         </>
+      )}
+
+      {!loading && recentEntries.length > 0 && (
+        <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] mt-6 overflow-hidden">
+          <div className="px-5 py-4 text-sm font-semibold border-b" style={{ color: COLORS.ink, borderColor: COLORS.line }}>
+            7 derniers versements ajoutés
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm font-mono">
+              <thead>
+                <tr style={{ backgroundColor: "var(--bg-page)" }}>
+                  {["Date", "Receveur", "Recette", "Gazoil", "Autres", "Net versé"].map((h) => (
+                    <th key={h} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {recentEntries.map((e) => (
+                  <tr
+                    key={e.date}
+                    className="border-t"
+                    style={{ borderColor: COLORS.line, color: Number(e.recette) === 0 ? "var(--text-slate-light)" : COLORS.ink }}
+                  >
+                    <td className="px-5 py-2">{e.date}</td>
+                    <td className="px-5 py-2 font-sans">{e.receveur}</td>
+                    <td className="px-5 py-2">{fmt(e.recette)}</td>
+                    <td className="px-5 py-2">{fmt(e.gazoil)}</td>
+                    <td className="px-5 py-2">{fmt(e.autres)}</td>
+                    <td className="px-5 py-2 font-semibold">{fmt(e.net)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       <div className="text-xs text-[var(--text-slate-light)] mt-8 pb-10">
