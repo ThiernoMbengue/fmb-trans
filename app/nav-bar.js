@@ -46,6 +46,9 @@ export default function NavBar({ user }) {
             <Link href="/saisie" className="px-3 py-1.5 rounded-lg" style={{ color: COLORS.ink }}>
               Saisie
             </Link>
+            <Link href="/avances" className="px-3 py-1.5 rounded-lg" style={{ color: COLORS.ink }}>
+              Avances
+            </Link>
             <Link href="/vehicules" className="px-3 py-1.5 rounded-lg" style={{ color: COLORS.ink }}>
               Véhicules
             </Link>
