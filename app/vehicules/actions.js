@@ -10,6 +10,7 @@ export async function addVehicle(formData) {
   const immatriculation = formData.get("immatriculation");
   const proprietaire = formData.get("proprietaire");
   const chauffeur = formData.get("chauffeur");
+  const taux_chauffeur = Number(formData.get("taux_chauffeur")) || 5000;
 
   if (!marque || !immatriculation) {
     return { error: "Marque et immatriculation requises" };
@@ -17,7 +18,7 @@ export async function addVehicle(formData) {
 
   const { error } = await supabase
     .from("vehicles")
-    .insert({ marque, immatriculation, proprietaire, chauffeur });
+    .insert({ marque, immatriculation, proprietaire, chauffeur, taux_chauffeur });
 
   if (error) return { error: error.message };
 

@@ -23,7 +23,7 @@ export default async function VehiculesPage() {
         <table className="w-full text-sm">
           <thead>
             <tr style={{ backgroundColor: "var(--bg-page)" }}>
-              {["Marque", "Immatriculation", "Propriétaire", "Chauffeur", ""].map((h) => (
+              {["Marque", "Immatriculation", "Propriétaire", "Chauffeur", "Taux chauffeur/jour", ""].map((h) => (
                 <th key={h} className="text-left px-4 py-2.5 font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">
                   {h}
                 </th>
@@ -37,6 +37,7 @@ export default async function VehiculesPage() {
                 <td className="px-4 py-2.5 font-mono">{v.immatriculation}</td>
                 <td className="px-4 py-2.5">{v.proprietaire}</td>
                 <td className="px-4 py-2.5">{v.chauffeur}</td>
+                <td className="px-4 py-2.5">{v.taux_chauffeur ? `${v.taux_chauffeur} F` : "5000 F"}</td>
                 <td className="px-4 py-2.5">
                   <DeleteButton id={v.id} />
                 </td>

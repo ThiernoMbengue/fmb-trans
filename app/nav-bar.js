@@ -82,6 +82,9 @@ export default function NavBar({ user }) {
             <Link href="/vehicules" className="px-3 py-1.5 rounded-lg" style={{ color: COLORS.ink }}>
               Véhicules
             </Link>
+            <Link href="/rapports" className="px-3 py-1.5 rounded-lg" style={{ color: COLORS.ink }}>
+              Rapports
+            </Link>
             <button
               onClick={logout}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white"

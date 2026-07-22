@@ -14,6 +14,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const TYPE_LABEL = {
   avance_proprietaire: "Avance au propriétaire",
   depense_imprevue: "Dépense imprévue (véhicule)",
+  remboursement: "Remboursement reçu",
 };
 
 function Field({ label, children }) {
@@ -86,7 +87,9 @@ export default function AvancesClient({ vehicles }) {
   const totals = useMemo(() => {
     const avance = rows.filter((r) => r.type === "avance_proprietaire").reduce((s, r) => s + (Number(r.montant) || 0), 0);
     const depense = rows.filter((r) => r.type === "depense_imprevue").reduce((s, r) => s + (Number(r.montant) || 0), 0);
-    return { avance, depense };
+    const rembourse = rows.filter((r) => r.type === "remboursement").reduce((s, r) => s + (Number(r.montant) || 0), 0);
+    const soldeDu = avance + depense - rembourse;
+    return { avance, depense, rembourse, soldeDu };
   }, [rows]);
 
   if (!vehicles.length) {
@@ -131,7 +134,7 @@ export default function AvancesClient({ vehicles }) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
           <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: COLORS.fleet }} />
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
@@ -146,6 +149,13 @@ export default function AvancesClient({ vehicles }) {
           </div>
           <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: COLORS.ink }}>{fmt(totals.depense)} F</div>
         </div>
+        <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
+          <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: COLORS.green }} />
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
+            Solde net dû au gestionnaire
+          </div>
+          <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: COLORS.ink }}>{fmt(totals.soldeDu)} F</div>
+        </div>
       </div>
 
       <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6">
@@ -158,6 +168,7 @@ export default function AvancesClient({ vehicles }) {
             <select className={inputClass} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
               <option value="avance_proprietaire">Avance au propriétaire</option>
               <option value="depense_imprevue">Dépense imprévue (véhicule)</option>
+              <option value="remboursement">Remboursement reçu</option>
             </select>
           </Field>
           <Field label="Montant (FCFA)">
@@ -208,8 +219,10 @@ export default function AvancesClient({ vehicles }) {
                       <span
                         className="text-xs font-medium px-2 py-0.5 rounded-full"
                         style={{
-                          backgroundColor: r.type === "avance_proprietaire" ? "var(--fleet)15" : "var(--amber)15",
-                          color: r.type === "avance_proprietaire" ? COLORS.fleet : COLORS.amber,
+                          backgroundColor:
+                            r.type === "avance_proprietaire" ? "rgba(31,78,120,0.1)" :
+                            r.type === "remboursement" ? "rgba(30,122,95,0.1)" : "rgba(201,134,43,0.1)",
+                          color: r.type === "avance_proprietaire" ? COLORS.fleet : r.type === "remboursement" ? COLORS.green : COLORS.amber,
                         }}
                       >
                         {TYPE_LABEL[r.type]}
