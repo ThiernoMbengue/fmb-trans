@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Save, Pencil, Trash2, X, Loader2, AlertCircle } from "lucide-react";
+import { Save, Pencil, Trash2, X, Loader2, AlertCircle, CalendarSearch } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { saveEntry, deleteEntry } from "./actions";
 
@@ -37,6 +37,7 @@ export default function SaisieClient({ vehicles }) {
   const [toast, setToast] = useState(null);
   const [form, setForm] = useState(null);
   const [editingDate, setEditingDate] = useState(null);
+  const [searchDate, setSearchDate] = useState("");
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -133,6 +134,10 @@ export default function SaisieClient({ vehicles }) {
   };
 
   const recent = useMemo(() => [...entries].reverse().slice(0, 8), [entries]);
+  const searchResult = useMemo(
+    () => (searchDate ? entries.find((e) => e.date === searchDate) || null : undefined),
+    [entries, searchDate]
+  );
 
   if (!vehicles.length) {
     return (
@@ -229,6 +234,88 @@ export default function SaisieClient({ vehicles }) {
           </button>
         </div>
       )}
+
+      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 mt-6">
+        <div className="flex items-center gap-2 text-sm font-semibold mb-3" style={{ color: COLORS.ink }}>
+          <CalendarSearch size={16} /> Rechercher une saisie par date
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            className={inputClass + " max-w-[200px]"}
+            value={searchDate}
+            onChange={(e) => setSearchDate(e.target.value)}
+          />
+          {searchDate && (
+            <button onClick={() => setSearchDate("")} className="text-xs text-[var(--text-slate-light)] flex items-center gap-1">
+              <X size={12} /> Effacer
+            </button>
+          )}
+        </div>
+
+        {searchResult === null && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 bg-[var(--bg-page)] rounded-lg px-4 py-3">
+            <span className="text-sm text-[var(--text-slate)]">Aucune saisie trouvée pour le {searchDate}.</span>
+            <button
+              onClick={() => {
+                setEditingDate(null);
+                setForm(emptyForm(vehicle?.chauffeur, searchDate));
+                setSearchDate("");
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg text-white shrink-0"
+              style={{ backgroundColor: COLORS.fleet }}
+            >
+              + Créer une saisie pour cette date
+            </button>
+          </div>
+        )}
+
+        {searchResult && (
+          <div className="mt-4 bg-[var(--bg-page)] rounded-lg px-4 py-3 overflow-x-auto">
+            <table className="w-full text-sm font-mono min-w-[420px]">
+              <thead>
+                <tr>
+                  {["Date", "Recette", "Gazoil", "Autres", "Net versé", ""].map((h) => (
+                    <th key={h} className="text-left font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)] pb-2">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ color: COLORS.ink }}>
+                  <td className="py-1">{searchResult.date}</td>
+                  <td className="py-1">{fmt(searchResult.recette)}</td>
+                  <td className="py-1">{fmt(searchResult.gazoil)}</td>
+                  <td className="py-1">{fmt(searchResult.autres)}</td>
+                  <td className="py-1 font-semibold">{fmt(searchResult.net)}</td>
+                  <td className="py-1">
+                    <div className="flex items-center gap-3 font-sans">
+                      <button
+                        onClick={() => {
+                          startEdit(searchResult);
+                          setSearchDate("");
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        className="flex items-center gap-1 text-xs font-medium"
+                        style={{ color: COLORS.fleet }}
+                      >
+                        <Pencil size={13} /> Modifier
+                      </button>
+                      <button
+                        onClick={() => onDelete(searchResult.date)}
+                        className="flex items-center gap-1 text-xs font-medium"
+                        style={{ color: COLORS.red }}
+                      >
+                        <Trash2 size={13} /> Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] mt-6 overflow-hidden">
         <div className="px-5 py-4 text-sm font-semibold border-b" style={{ color: COLORS.ink, borderColor: COLORS.line }}>

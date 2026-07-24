@@ -97,35 +97,42 @@ function trendCalc(current, previous) {
   return { pct, dir };
 }
 
-function TrendChip({ t, invert = false, caption }) {
+function TrendChip({ t, invert = false }) {
   const good = invert ? t.dir === "down" : t.dir === "up";
   const bad = invert ? t.dir === "up" : t.dir === "down";
   const color = good ? COLORS.green : bad ? COLORS.red : COLORS.slate;
   const Icon = t.dir === "up" ? ArrowUpRight : t.dir === "down" ? ArrowDownRight : Minus;
   return (
-    <div className="flex items-center gap-1 text-[11px] font-medium" style={{ color }}>
-      <Icon size={12} />
+    <div
+      className="flex items-center gap-0.5 text-[10px] sm:text-[11px] font-medium px-1.5 py-0.5 rounded-md whitespace-nowrap"
+      style={{ color, backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)` }}
+    >
+      <Icon size={11} />
       {t.pct > 0 && t.dir !== "flat" ? "+" : ""}{t.pct.toFixed(1)}%
-      {caption && <span className="text-[var(--text-slate-light)] font-normal ml-1">{caption}</span>}
     </div>
   );
 }
 
 function KpiCard({ icon: Icon, label, value, accent, t, invert, caption }) {
   return (
-    <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between">
+    <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-3.5 sm:p-4 flex flex-col gap-2.5 sm:gap-3 min-w-0">
+      <div className="flex items-center justify-between gap-2 min-w-0">
         <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center"
+          className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0"
           style={{ backgroundColor: `color-mix(in srgb, ${accent} 16%, transparent)` }}
         >
-          <Icon size={16} color={accent} strokeWidth={2.25} />
+          <Icon size={15} color={accent} strokeWidth={2.25} />
         </div>
-        {t && <TrendChip t={t} invert={invert} caption={caption} />}
+        {t && (
+          <div className="shrink-0">
+            <TrendChip t={t} invert={invert} />
+          </div>
+        )}
       </div>
-      <div>
-        <div className="font-figures text-xl font-semibold" style={{ color: COLORS.ink }}>{value}</div>
-        <div className="text-xs text-[var(--text-slate)] mt-0.5">{label}</div>
+      <div className="min-w-0">
+        <div className="font-figures text-base sm:text-xl font-semibold leading-tight break-words" style={{ color: COLORS.ink }}>{value}</div>
+        <div className="text-[11px] sm:text-xs text-[var(--text-slate)] mt-0.5 leading-snug">{label}</div>
+        {caption && <div className="text-[10px] text-[var(--text-slate-light)] mt-1">{caption}</div>}
       </div>
     </div>
   );
@@ -212,16 +219,16 @@ export default function DashboardClient({ vehicles }) {
 
   return (
     <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <div className="flex items-center gap-2.5 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl px-3 py-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
+        <div className="flex items-center gap-2.5 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl px-3 py-2 min-w-0">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 16%, transparent)" }}>
             <Bus size={15} color={COLORS.fleet} />
           </div>
-          <div className="relative">
+          <div className="relative min-w-0">
             <select
               value={vehicleId || ""}
               onChange={(e) => setVehicleId(e.target.value)}
-              className="appearance-none bg-transparent text-sm font-semibold pr-6 focus:outline-none"
+              className="appearance-none bg-transparent text-sm font-semibold pr-6 focus:outline-none max-w-[180px] sm:max-w-none truncate"
               style={{ color: COLORS.ink }}
             >
               {vehicles.map((v) => (
@@ -230,15 +237,15 @@ export default function DashboardClient({ vehicles }) {
             </select>
             <ChevronDown size={13} className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-slate-light)]" />
           </div>
-          {vehicle && <div className="text-xs text-[var(--text-slate-light)] hidden sm:block border-l border-[var(--border-line)] pl-2.5 ml-0.5">{vehicle.chauffeur}</div>}
+          {vehicle && <div className="text-xs text-[var(--text-slate-light)] hidden md:block border-l border-[var(--border-line)] pl-2.5 ml-0.5 shrink-0">{vehicle.chauffeur}</div>}
         </div>
 
-        <div className="flex items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl p-1">
+        <div className="flex items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl p-1 overflow-x-auto max-w-full">
           {PERIODS.map((p) => (
             <button
               key={p.id}
               onClick={() => setPeriodType(p.id)}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+              className="text-xs font-medium px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors shrink-0 whitespace-nowrap"
               style={{
                 backgroundColor: periodType === p.id ? "var(--amber)" : "transparent",
                 color: periodType === p.id ? "#1A1200" : "var(--text-slate)",
@@ -251,10 +258,10 @@ export default function DashboardClient({ vehicles }) {
       </div>
 
       {periodType === "personnalise" && (
-        <div className="flex items-center gap-2 mb-4 text-sm">
-          <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5 text-xs" />
+        <div className="flex flex-wrap items-center gap-2 mb-4 text-sm">
+          <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5 text-xs min-w-0" />
           <span className="text-[var(--text-slate-light)] text-xs">au</span>
-          <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5 text-xs" />
+          <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5 text-xs min-w-0" />
         </div>
       )}
 
@@ -266,7 +273,7 @@ export default function DashboardClient({ vehicles }) {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-3.5">
             <KpiCard icon={Coins} label="Recette totale" value={`${fmt(cur.recette)} F`} accent={COLORS.amber} t={trendCalc(cur.recette, prev.recette)} caption={vsLabel} />
             <KpiCard icon={Wallet} label="Dépenses totales" value={`${fmt(cur.depenses)} F`} accent={COLORS.red} t={trendCalc(cur.depenses, prev.depenses)} invert caption={vsLabel} />
             <KpiCard icon={TrendingUp} label="Bénéfice" value={`${fmt(cur.benefice)} F`} accent={COLORS.green} t={trendCalc(cur.benefice, prev.benefice)} caption={vsLabel} />
