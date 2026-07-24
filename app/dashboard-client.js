@@ -8,6 +8,7 @@ import {
 import {
   Coins, Wallet, TrendingUp, HandCoins, CalendarCheck, Gauge,
   ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Loader2, Bus,
+  Sparkles, ShieldCheck, Target, Route,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -209,6 +210,34 @@ export default function DashboardClient({ vehicles }) {
     [entries]
   );
 
+  const avgDailyRevenue = cur.jours > 0 ? cur.recette / cur.jours : 0;
+  const expenseRate = cur.recette > 0 ? (cur.depenses / cur.recette) * 100 : 0;
+  const operationalScore = Math.max(0, Math.min(100, Math.round((cur.marge * 0.7) + (cur.jours > 0 ? 25 : 0) - Math.max(0, expenseRate - 45) * 0.25)));
+  const targetRevenue = Math.max(cur.recette, Math.ceil((avgDailyRevenue * Math.max(cur.jours + 4, 7)) / 1000) * 1000);
+  const insightCards = [
+    {
+      icon: ShieldCheck,
+      title: "Score pilotage",
+      value: `${operationalScore}/100`,
+      detail: operationalScore >= 75 ? "Exploitation saine : maintenir la cadence." : operationalScore >= 45 ? "À surveiller : réduire les dépenses variables." : "Priorité : sécuriser les recettes quotidiennes.",
+      accent: COLORS.green,
+    },
+    {
+      icon: Target,
+      title: "Objectif période",
+      value: `${fmt(targetRevenue)} F`,
+      detail: `Basé sur ${fmt(avgDailyRevenue)} F de recette moyenne active.`,
+      accent: COLORS.amber,
+    },
+    {
+      icon: Route,
+      title: "Efficacité coûts",
+      value: `${expenseRate.toFixed(0)}%`,
+      detail: expenseRate <= 35 ? "Très bon ratio dépenses / recettes." : expenseRate <= 55 ? "Optimisation possible du gazoil et des autres charges." : "Charges élevées : vérifier trajets, carburant et incidents.",
+      accent: expenseRate <= 45 ? COLORS.fleet : COLORS.red,
+    },
+  ];
+
   if (!vehicles.length) {
     return (
       <main className="px-6 md:px-10 py-8 max-w-6xl mx-auto text-sm text-[var(--text-slate-light)]">
@@ -219,6 +248,37 @@ export default function DashboardClient({ vehicles }) {
 
   return (
     <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto">
+      <section className="relative overflow-hidden rounded-3xl border border-[var(--border-line)] bg-[var(--bg-surface)] p-5 sm:p-6 mb-5 shadow-sm">
+        <div className="absolute inset-0 opacity-70 pointer-events-none" style={{ background: "radial-gradient(circle at top right, color-mix(in srgb, var(--fleet-bright) 22%, transparent), transparent 34%), linear-gradient(135deg, color-mix(in srgb, var(--amber) 14%, transparent), transparent 42%)" }} />
+        <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] mb-3" style={{ color: COLORS.fleet, backgroundColor: "color-mix(in srgb, var(--fleet-bright) 12%, transparent)" }}>
+              <Sparkles size={13} /> Centre de contrôle intelligent
+            </div>
+            <h1 className="font-display text-2xl sm:text-4xl font-bold tracking-tight" style={{ color: COLORS.ink }}>
+              Pilotez la rentabilité de chaque véhicule en temps réel.
+            </h1>
+            <p className="text-sm sm:text-base text-[var(--text-slate)] mt-2 leading-relaxed">
+              Vue exécutive claire, indicateurs de tendance et recommandations automatiques pour agir vite sur les recettes, le gazoil et le net propriétaire.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:min-w-[360px]">
+            <div className="rounded-2xl bg-white/60 dark:bg-white/5 border border-[var(--border-line)] p-3">
+              <div className="text-[10px] uppercase tracking-wide text-[var(--text-slate-light)]">Véhicules</div>
+              <div className="font-figures text-lg font-bold mt-1">{vehicles.length}</div>
+            </div>
+            <div className="rounded-2xl bg-white/60 dark:bg-white/5 border border-[var(--border-line)] p-3">
+              <div className="text-[10px] uppercase tracking-wide text-[var(--text-slate-light)]">Marge</div>
+              <div className="font-figures text-lg font-bold mt-1">{cur.marge.toFixed(0)}%</div>
+            </div>
+            <div className="rounded-2xl bg-white/60 dark:bg-white/5 border border-[var(--border-line)] p-3">
+              <div className="text-[10px] uppercase tracking-wide text-[var(--text-slate-light)]">Score</div>
+              <div className="font-figures text-lg font-bold mt-1">{operationalScore}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
         <div className="flex items-center gap-2.5 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl px-3 py-2 min-w-0">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 16%, transparent)" }}>
@@ -273,6 +333,26 @@ export default function DashboardClient({ vehicles }) {
         </div>
       ) : (
         <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-5">
+            {insightCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <div key={card.title} className="group rounded-2xl border border-[var(--border-line)] bg-[var(--bg-surface)] p-4 shadow-sm transition-transform hover:-translate-y-0.5">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0" style={{ backgroundColor: `color-mix(in srgb, ${card.accent} 14%, transparent)` }}>
+                      <Icon size={18} color={card.accent} strokeWidth={2.25} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-[var(--text-slate)]">{card.title}</div>
+                      <div className="font-figures text-xl font-semibold mt-0.5" style={{ color: COLORS.ink }}>{card.value}</div>
+                      <div className="text-[11px] text-[var(--text-slate-light)] mt-1 leading-snug">{card.detail}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
           <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-3.5">
             <KpiCard icon={Coins} label="Recette totale" value={`${fmt(cur.recette)} F`} accent={COLORS.amber} t={trendCalc(cur.recette, prev.recette)} caption={vsLabel} />
             <KpiCard icon={Wallet} label="Dépenses totales" value={`${fmt(cur.depenses)} F`} accent={COLORS.red} t={trendCalc(cur.depenses, prev.depenses)} invert caption={vsLabel} />
