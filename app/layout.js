@@ -1,10 +1,10 @@
 import "./globals.css";
-import NavBar from "./nav-bar";
+import AppShell from "./app-shell";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
   title: "FMB Trans-Mobilité Services",
-  description: "Saisie & suivi des versements de la flotte",
+  description: "Suivi de flotte — versements, avances et rapports",
 };
 
 export default async function RootLayout({ children }) {
@@ -23,8 +23,7 @@ export default async function RootLayout({ children }) {
         />
       </head>
       <body style={{ fontFamily: "'Inter', ui-sans-serif, system-ui" }}>
-        <NavBar user={user} />
-        {children}
+        <AppShell user={user}>{children}</AppShell>
       </body>
     </html>
   );
