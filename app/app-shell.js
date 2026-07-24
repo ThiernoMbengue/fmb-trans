@@ -79,7 +79,7 @@ function SidebarContent({ user, pathname, onNavigate }) {
               key={it.href}
               href={it.href}
               onClick={onNavigate}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium hover:translate-x-1"
               style={{
                 backgroundColor: active ? "rgba(201,134,43,0.14)" : "transparent",
                 color: active ? "#E3A947" : "rgba(255,255,255,0.75)",
@@ -137,7 +137,7 @@ export default function AppShell({ user, children }) {
 
       {/* Sidebar mobile (drawer) */}
       {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-40 flex">
+        <div className="md:hidden fixed inset-0 z-40 flex animate-fade-up">
           <div className="w-72 flex flex-col" style={{ backgroundColor: "var(--bg-sidebar)" }}>
             <div className="flex justify-end px-4 pt-4">
               <button onClick={() => setMobileOpen(false)} className="text-white/70">
@@ -154,7 +154,7 @@ export default function AppShell({ user, children }) {
 
       <div className="flex-1 md:ml-64 flex flex-col min-w-0">
         <header
-          className="sticky top-0 z-20 flex items-center justify-between gap-3 px-4 md:px-8 py-3 border-b backdrop-blur"
+          className="sticky top-0 z-20 flex items-center justify-between gap-3 px-4 md:px-8 py-3 border-b backdrop-blur shadow-sm"
           style={{ backgroundColor: "color-mix(in srgb, var(--bg-surface) 88%, transparent)", borderColor: "var(--border-line)" }}
         >
           <button onClick={() => setMobileOpen(true)} className="md:hidden text-[var(--text-ink)]">
