@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import {
   Coins, Wallet, TrendingUp, HandCoins, CalendarCheck, Gauge,
-  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Loader2, Bus,
+  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, ChevronLeft, Loader2, Bus,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -75,6 +75,76 @@ const PERIOD_VS_LABEL = {
   annee: "vs année précédente", personnalise: "vs période précédente",
 };
 
+const MONTH_LABELS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
+
+const mondayOf = (d) => { const day = d.getDay(); const diff = day === 0 ? -6 : 1 - day; return addDays(d, diff); };
+
+function bucketAgg(rows) {
+  const recette = rows.reduce((s, r) => s + (Number(r.recette) || 0), 0);
+  const gazoil = rows.reduce((s, r) => s + (Number(r.gazoil) || 0), 0);
+  const autres = rows.reduce((s, r) => s + (Number(r.autres) || 0), 0);
+  return { Recette: recette, Dépenses: gazoil + autres, Bénéfice: recette - (gazoil + autres) };
+}
+
+function aggByYear(entries) {
+  const map = {};
+  entries.forEach((e) => { const y = e.date.slice(0, 4); (map[y] = map[y] || []).push(e); });
+  return Object.keys(map).sort().map((y) => ({ date: y, _year: y, ...bucketAgg(map[y]) }));
+}
+
+function aggByMonth(entries, year) {
+  const buckets = Array.from({ length: 12 }, () => []);
+  entries.forEach((e) => {
+    if (e.date.slice(0, 4) === String(year)) {
+      const m = parseInt(e.date.slice(5, 7), 10) - 1;
+      buckets[m].push(e);
+    }
+  });
+  return buckets.map((rows, i) => ({ date: MONTH_LABELS[i], _year: year, _month: i, ...bucketAgg(rows) }));
+}
+
+function aggByWeek(entries, year, month) {
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month + 1, 0);
+  let cursor = mondayOf(monthStart);
+  const buckets = [];
+  while (cursor <= monthEnd) {
+    const wStart = new Date(cursor);
+    const wEnd = addDays(wStart, 6);
+    buckets.push({ weekStart: isoOf(wStart), wStart, wEnd, rows: [] });
+    cursor = addDays(cursor, 7);
+  }
+  entries.forEach((e) => {
+    const d = new Date(e.date + "T00:00:00");
+    for (const b of buckets) {
+      if (d >= b.wStart && d <= b.wEnd) { b.rows.push(e); break; }
+    }
+  });
+  return buckets.map((b) => ({
+    date: `${b.wStart.getDate()}–${Math.min(b.wEnd.getDate(), monthEnd.getDate())} ${MONTH_LABELS[b.wStart.getMonth()]}`,
+    _year: year, _month: month, _weekStart: b.weekStart,
+    ...bucketAgg(b.rows),
+  }));
+}
+
+function aggByDay(entries, weekStart) {
+  const start = new Date(weekStart + "T00:00:00");
+  const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  return days.map((d) => {
+    const iso = isoOf(d);
+    const rows = entries.filter((e) => e.date === iso);
+    return { date: fmtShortDate(iso), ...bucketAgg(rows) };
+  });
+}
+
+function drillLabel(drill) {
+  if (!drill) return null;
+  if (drill.level === "year") return "Toutes les années";
+  if (drill.level === "month") return `Année ${drill.year}`;
+  if (drill.level === "week") return `${MONTH_LABELS[drill.month]} ${drill.year}`;
+  return `Semaine du ${drill.weekStart}`;
+}
+
 function aggregate(rows) {
   const recette = rows.reduce((s, r) => s + (Number(r.recette) || 0), 0);
   const gazoil = rows.reduce((s, r) => s + (Number(r.gazoil) || 0), 0);
@@ -115,7 +185,7 @@ function TrendChip({ t, invert = false }) {
 
 function KpiCard({ icon: Icon, label, value, accent, t, invert, caption }) {
   return (
-    <div className="surface-card pro-card rounded-2xl p-3.5 sm:p-4 flex flex-col gap-2.5 sm:gap-3 min-w-0">
+    <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-3.5 sm:p-4 flex flex-col gap-2.5 sm:gap-3 min-w-0">
       <div className="flex items-center justify-between gap-2 min-w-0">
         <div
           className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -162,6 +232,19 @@ export default function DashboardClient({ vehicles }) {
   const [periodType, setPeriodType] = useState("mois");
   const [customStart, setCustomStart] = useState(isoOf(addDays(todayDate(), -30)));
   const [customEnd, setCustomEnd] = useState(isoOf(todayDate()));
+  const [drill, setDrill] = useState(null);
+
+  useEffect(() => {
+    const today = todayDate();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const weekStart = isoOf(mondayOf(today));
+    if (periodType === "annee") setDrill({ level: "year", year, month, weekStart });
+    else if (periodType === "mois") setDrill({ level: "month", year, month, weekStart });
+    else if (periodType === "semaine") setDrill({ level: "week", year, month, weekStart });
+    else if (periodType === "jour") setDrill({ level: "day", year, month, weekStart });
+    else setDrill(null);
+  }, [periodType, vehicleId]);
 
   useEffect(() => {
     if (!vehicleId) return;
@@ -193,16 +276,42 @@ export default function DashboardClient({ vehicles }) {
   const prev = useMemo(() => aggregate(previousRows), [previousRows]);
   const vsLabel = PERIOD_VS_LABEL[periodType];
 
-  const chartData = useMemo(
-    () =>
-      [...currentRows].sort((a, b) => a.date.localeCompare(b.date)).map((e) => ({
+  const chartData = useMemo(() => {
+    if (!drill) {
+      return [...currentRows].sort((a, b) => a.date.localeCompare(b.date)).map((e) => ({
         date: fmtShortDate(e.date),
         Recette: Number(e.recette) || 0,
         Dépenses: (Number(e.gazoil) || 0) + (Number(e.autres) || 0),
         Bénéfice: (Number(e.recette) || 0) - ((Number(e.gazoil) || 0) + (Number(e.autres) || 0)),
-      })),
-    [currentRows]
-  );
+      }));
+    }
+    if (drill.level === "year") return aggByYear(entries);
+    if (drill.level === "month") return aggByMonth(entries, drill.year);
+    if (drill.level === "week") return aggByWeek(entries, drill.year, drill.month);
+    return aggByDay(entries, drill.weekStart);
+  }, [drill, entries, currentRows]);
+
+  const handleChartClick = (e) => {
+    if (!drill || !e || !e.activePayload || !e.activePayload.length) return;
+    const p = e.activePayload[0].payload;
+    if (drill.level === "year") setDrill((d) => ({ ...d, level: "month", year: p._year }));
+    else if (drill.level === "month") {
+      if (p.Recette === 0 && p.Dépenses === 0) return;
+      setDrill((d) => ({ ...d, level: "week", month: p._month }));
+    } else if (drill.level === "week") {
+      if (p.Recette === 0 && p.Dépenses === 0) return;
+      setDrill((d) => ({ ...d, level: "day", weekStart: p._weekStart }));
+    }
+  };
+
+  const goBack = () => {
+    if (!drill) return;
+    if (drill.level === "month") setDrill((d) => ({ ...d, level: "year" }));
+    else if (drill.level === "week") setDrill((d) => ({ ...d, level: "month" }));
+    else if (drill.level === "day") setDrill((d) => ({ ...d, level: "week" }));
+  };
+
+  const drillable = drill && drill.level !== "day";
 
   const recentEntries = useMemo(
     () => [...entries].sort((a, b) => (b.created_at || b.date).localeCompare(a.created_at || a.date)).slice(0, 7),
@@ -218,32 +327,7 @@ export default function DashboardClient({ vehicles }) {
   }
 
   return (
-    <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto animate-fade-up">
-      <section className="surface-card rounded-3xl p-5 sm:p-6 mb-5 overflow-hidden relative">
-        <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-[var(--fleet-bright)]/10 blur-2xl" />
-        <div className="absolute right-16 bottom-0 h-20 w-20 rounded-full bg-[var(--amber)]/10 blur-xl" />
-        <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border-line)] bg-[var(--bg-page)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-slate)]">
-              <span className="status-dot h-2 w-2 rounded-full bg-[var(--green)] text-[var(--green)]" />
-              Pilotage en temps réel
-            </div>
-            <h1 className="font-display mt-4 text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text-ink)]">Tableau de bord de flotte</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-slate)]">Suivez les recettes, dépenses, marges et versements avec une lecture claire par véhicule et par période.</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs text-[var(--text-slate)] sm:min-w-64">
-            <div className="rounded-2xl bg-[var(--bg-page)] p-3">
-              <div className="font-figures text-lg font-semibold text-[var(--text-ink)]">{vehicles.length}</div>
-              <div>Véhicules suivis</div>
-            </div>
-            <div className="rounded-2xl bg-[var(--bg-page)] p-3">
-              <div className="font-figures text-lg font-semibold text-[var(--text-ink)]">{range.start}</div>
-              <div>Début période</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
+    <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
         <div className="flex items-center gap-2.5 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl px-3 py-2 min-w-0">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 16%, transparent)" }}>
@@ -308,15 +392,30 @@ export default function DashboardClient({ vehicles }) {
           </div>
 
           {chartData.length === 0 ? (
-            <div className="surface-card rounded-2xl p-8 text-center text-sm text-[var(--text-slate-light)] mt-6">
+            <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-8 text-center text-sm text-[var(--text-slate-light)] mt-6">
               Aucune saisie sur la période sélectionnée.
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
-              <div className="surface-card pro-card rounded-2xl p-5">
+            <>
+              {drill && (
+                <div className="flex items-center gap-2 mt-6 mb-1 text-xs">
+                  {drill.level !== "year" && (
+                    <button
+                      onClick={goBack}
+                      className="flex items-center gap-1 px-2 py-1 rounded-md border border-[var(--border-line)] text-[var(--text-slate)] hover:bg-[var(--bg-page)]"
+                    >
+                      <ChevronLeft size={12} /> Retour
+                    </button>
+                  )}
+                  <span className="text-[var(--text-slate-light)]">{drillLabel(drill)}</span>
+                  {drillable && <span className="text-[var(--text-slate-light)]">· clique une barre pour zoomer</span>}
+                </div>
+              )}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2">
+              <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-5">
                 <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Évolution des recettes</div>
                 <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} onClick={handleChartClick} style={{ cursor: drillable ? "pointer" : "default" }}>
                     <defs>
                       <linearGradient id="gRec" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={COLORS.amber} stopOpacity={0.35} />
@@ -332,10 +431,10 @@ export default function DashboardClient({ vehicles }) {
                 </ResponsiveContainer>
               </div>
 
-              <div className="surface-card pro-card rounded-2xl p-5">
+              <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-5">
                 <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Évolution des dépenses</div>
                 <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} onClick={handleChartClick} style={{ cursor: drillable ? "pointer" : "default" }}>
                     <defs>
                       <linearGradient id="gDep" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={COLORS.red} stopOpacity={0.3} />
@@ -351,10 +450,10 @@ export default function DashboardClient({ vehicles }) {
                 </ResponsiveContainer>
               </div>
 
-              <div className="surface-card pro-card rounded-2xl p-5">
+              <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-5">
                 <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Recettes vs Dépenses</div>
                 <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} onClick={handleChartClick} style={{ cursor: drillable ? "pointer" : "default" }}>
                     <CartesianGrid stroke={COLORS.line} vertical={false} />
                     <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
                     <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
@@ -366,10 +465,10 @@ export default function DashboardClient({ vehicles }) {
                 </ResponsiveContainer>
               </div>
 
-              <div className="surface-card pro-card rounded-2xl p-5">
+              <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-5">
                 <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Bénéfice net</div>
                 <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} onClick={handleChartClick} style={{ cursor: drillable ? "pointer" : "default" }}>
                     <defs>
                       <linearGradient id="gBen" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={COLORS.green} stopOpacity={0.35} />
@@ -385,12 +484,13 @@ export default function DashboardClient({ vehicles }) {
                 </ResponsiveContainer>
               </div>
             </div>
+            </>
           )}
         </>
       )}
 
       {!loading && recentEntries.length > 0 && (
-        <div className="surface-card rounded-2xl mt-6 overflow-hidden">
+        <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] mt-6 overflow-hidden">
           <div className="px-5 py-4 text-sm font-semibold border-b" style={{ color: COLORS.ink, borderColor: COLORS.line }}>
             7 derniers versements ajoutés
           </div>
