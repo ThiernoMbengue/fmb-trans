@@ -115,7 +115,7 @@ function TrendChip({ t, invert = false }) {
 
 function KpiCard({ icon: Icon, label, value, accent, t, invert, caption }) {
   return (
-    <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-3.5 sm:p-4 flex flex-col gap-2.5 sm:gap-3 min-w-0">
+    <div className="surface-card pro-card rounded-2xl p-3.5 sm:p-4 flex flex-col gap-2.5 sm:gap-3 min-w-0">
       <div className="flex items-center justify-between gap-2 min-w-0">
         <div
           className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -218,7 +218,32 @@ export default function DashboardClient({ vehicles }) {
   }
 
   return (
-    <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto">
+    <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto animate-fade-up">
+      <section className="surface-card rounded-3xl p-5 sm:p-6 mb-5 overflow-hidden relative">
+        <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-[var(--fleet-bright)]/10 blur-2xl" />
+        <div className="absolute right-16 bottom-0 h-20 w-20 rounded-full bg-[var(--amber)]/10 blur-xl" />
+        <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border-line)] bg-[var(--bg-page)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-slate)]">
+              <span className="status-dot h-2 w-2 rounded-full bg-[var(--green)] text-[var(--green)]" />
+              Pilotage en temps réel
+            </div>
+            <h1 className="font-display mt-4 text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text-ink)]">Tableau de bord de flotte</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-slate)]">Suivez les recettes, dépenses, marges et versements avec une lecture claire par véhicule et par période.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs text-[var(--text-slate)] sm:min-w-64">
+            <div className="rounded-2xl bg-[var(--bg-page)] p-3">
+              <div className="font-figures text-lg font-semibold text-[var(--text-ink)]">{vehicles.length}</div>
+              <div>Véhicules suivis</div>
+            </div>
+            <div className="rounded-2xl bg-[var(--bg-page)] p-3">
+              <div className="font-figures text-lg font-semibold text-[var(--text-ink)]">{range.start}</div>
+              <div>Début période</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
         <div className="flex items-center gap-2.5 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl px-3 py-2 min-w-0">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 16%, transparent)" }}>
@@ -283,12 +308,12 @@ export default function DashboardClient({ vehicles }) {
           </div>
 
           {chartData.length === 0 ? (
-            <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-8 text-center text-sm text-[var(--text-slate-light)] mt-6">
+            <div className="surface-card rounded-2xl p-8 text-center text-sm text-[var(--text-slate-light)] mt-6">
               Aucune saisie sur la période sélectionnée.
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
-              <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-5">
+              <div className="surface-card pro-card rounded-2xl p-5">
                 <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Évolution des recettes</div>
                 <ResponsiveContainer width="100%" height={220}>
                   <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
@@ -307,7 +332,7 @@ export default function DashboardClient({ vehicles }) {
                 </ResponsiveContainer>
               </div>
 
-              <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-5">
+              <div className="surface-card pro-card rounded-2xl p-5">
                 <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Évolution des dépenses</div>
                 <ResponsiveContainer width="100%" height={220}>
                   <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
@@ -326,7 +351,7 @@ export default function DashboardClient({ vehicles }) {
                 </ResponsiveContainer>
               </div>
 
-              <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-5">
+              <div className="surface-card pro-card rounded-2xl p-5">
                 <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Recettes vs Dépenses</div>
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
@@ -341,7 +366,7 @@ export default function DashboardClient({ vehicles }) {
                 </ResponsiveContainer>
               </div>
 
-              <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] p-5">
+              <div className="surface-card pro-card rounded-2xl p-5">
                 <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Bénéfice net</div>
                 <ResponsiveContainer width="100%" height={220}>
                   <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
@@ -365,7 +390,7 @@ export default function DashboardClient({ vehicles }) {
       )}
 
       {!loading && recentEntries.length > 0 && (
-        <div className="bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-line)] mt-6 overflow-hidden">
+        <div className="surface-card rounded-2xl mt-6 overflow-hidden">
           <div className="px-5 py-4 text-sm font-semibold border-b" style={{ color: COLORS.ink, borderColor: COLORS.line }}>
             7 derniers versements ajoutés
           </div>
