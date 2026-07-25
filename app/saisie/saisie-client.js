@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Save, Pencil, Trash2, X, Loader2, AlertCircle, CalendarSearch } from "lucide-react";
+import { Save, Pencil, Trash2, X, Loader2, AlertCircle, CalendarSearch, Repeat, CalendarRange } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { saveEntry, deleteEntry } from "./actions";
+import { saveEntry, deleteEntry, saveLocationRange } from "./actions";
 
 const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)", green: "var(--green)", red: "var(--red)", line: "var(--border-line)" };
 const inputClass =
@@ -38,6 +38,15 @@ export default function SaisieClient({ vehicles }) {
   const [form, setForm] = useState(null);
   const [editingDate, setEditingDate] = useState(null);
   const [searchDate, setSearchDate] = useState("");
+
+  const [locOpen, setLocOpen] = useState(false);
+  const [locDebut, setLocDebut] = useState("");
+  const [locFin, setLocFin] = useState("");
+  const [locMontant, setLocMontant] = useState("");
+  const [locReceveur, setLocReceveur] = useState("");
+  const [locNote, setLocNote] = useState("Location");
+  const [locOverwrite, setLocOverwrite] = useState(false);
+  const [locSaving, setLocSaving] = useState(false);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -139,6 +148,48 @@ export default function SaisieClient({ vehicles }) {
     [entries, searchDate]
   );
 
+  const locDates = useMemo(() => {
+    if (!locDebut || !locFin || locDebut > locFin) return [];
+    const dates = [];
+    let d = new Date(locDebut + "T00:00:00");
+    const end = new Date(locFin + "T00:00:00");
+    let guard = 0;
+    while (d <= end && guard < 400) {
+      dates.push(d.toISOString().slice(0, 10));
+      d.setDate(d.getDate() + 1);
+      guard++;
+    }
+    return dates;
+  }, [locDebut, locFin]);
+
+  const locExisting = useMemo(
+    () => locDates.filter((d) => entries.some((e) => e.date === d)),
+    [locDates, entries]
+  );
+
+  const onSaveLocation = async () => {
+    if (!vehicleId || locDates.length === 0 || !locMontant) return;
+    setLocSaving(true);
+    const res = await saveLocationRange({
+      vehicleId,
+      dateDebut: locDebut,
+      dateFin: locFin,
+      montant: locMontant,
+      note: locNote,
+      receveur: locReceveur || vehicle?.chauffeur || "",
+      skipDates: locOverwrite ? [] : locExisting,
+    });
+    setLocSaving(false);
+    if (res?.error) {
+      showToast("Erreur: " + res.error, "error");
+    } else {
+      const skipped = locOverwrite ? 0 : locExisting.length;
+      showToast(`${res.count} jour(s) enregistré(s) pour la location${skipped ? `, ${skipped} déjà saisi(s) ignoré(s)` : ""}`);
+      setLocDebut(""); setLocFin(""); setLocMontant(""); setLocReceveur(""); setLocNote("Location"); setLocOverwrite(false);
+      await loadEntries(vehicleId);
+    }
+  };
+
   if (!vehicles.length) {
     return (
       <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto text-sm text-[var(--text-slate-light)]">
@@ -234,6 +285,64 @@ export default function SaisieClient({ vehicles }) {
           </button>
         </div>
       )}
+
+      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 mt-6">
+        <button onClick={() => setLocOpen((o) => !o)} className="flex items-center gap-2 text-sm font-semibold w-full text-left" style={{ color: COLORS.ink }}>
+          <CalendarRange size={16} />
+          Saisir une location sur plusieurs jours
+          <span className="ml-auto text-xs font-normal text-[var(--text-slate-light)]">{locOpen ? "Réduire" : "Ouvrir"}</span>
+        </button>
+        <p className="text-xs text-[var(--text-slate-light)] mt-1">Remplit automatiquement chaque jour de la période avec le même montant (ex : 15 000 F/jour du 24 juillet au 21 août).</p>
+
+        {locOpen && (
+          <div className="mt-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <Field label="Du">
+                <input type="date" className={inputClass} value={locDebut} onChange={(e) => setLocDebut(e.target.value)} />
+              </Field>
+              <Field label="Au">
+                <input type="date" className={inputClass} value={locFin} onChange={(e) => setLocFin(e.target.value)} />
+              </Field>
+              <Field label="Montant / jour (FCFA)">
+                <input type="number" className={inputClass} value={locMontant} onChange={(e) => setLocMontant(e.target.value)} placeholder="15000" />
+              </Field>
+              <Field label="Receveur / locataire">
+                <input className={inputClass} value={locReceveur} onChange={(e) => setLocReceveur(e.target.value)} placeholder={vehicle?.chauffeur || ""} />
+              </Field>
+            </div>
+            <div className="mt-3">
+              <Field label="Note (apparaîtra sur chaque jour)">
+                <input className={inputClass} value={locNote} onChange={(e) => setLocNote(e.target.value)} placeholder="Location" />
+              </Field>
+            </div>
+
+            {locDates.length > 0 && (
+              <div className="mt-4 bg-[var(--bg-page)] rounded-lg px-4 py-3 text-sm">
+                <div className="text-[var(--text-slate)]">
+                  <strong style={{ color: COLORS.ink }}>{locDates.length} jour(s)</strong> seront enregistrés à {fmt(locMontant || 0)} F/jour
+                  {locMontant ? ` (total ${fmt(locDates.length * (Number(locMontant) || 0))} F)` : ""}.
+                </div>
+                {locExisting.length > 0 && (
+                  <label className="flex items-center gap-2 mt-2 text-xs text-[var(--amber)]">
+                    <input type="checkbox" checked={locOverwrite} onChange={(e) => setLocOverwrite(e.target.checked)} />
+                    {locExisting.length} jour(s) sur cette période ont déjà une saisie — cocher pour les écraser, sinon ils seront ignorés.
+                  </label>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={onSaveLocation}
+              disabled={locSaving || locDates.length === 0 || !locMontant}
+              className="mt-4 flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white disabled:opacity-60"
+              style={{ backgroundColor: COLORS.fleet }}
+            >
+              {locSaving ? <Loader2 size={15} className="animate-spin" /> : <Repeat size={15} />}
+              Enregistrer la location ({locDates.length} jour{locDates.length > 1 ? "s" : ""})
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 mt-6">
         <div className="flex items-center gap-2 text-sm font-semibold mb-3" style={{ color: COLORS.ink }}>
