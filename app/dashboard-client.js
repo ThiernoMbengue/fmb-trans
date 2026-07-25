@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart, Bar,
+  AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import {
   Coins, Wallet, TrendingUp, HandCoins, CalendarCheck, Gauge,
-  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Loader2, Bus, ArrowLeft,
+  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Loader2, Bus,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -38,55 +38,37 @@ const PERIODS = [
   { id: "semaine", label: "Semaine" },
   { id: "mois", label: "Mois" },
   { id: "annee", label: "Année" },
+  { id: "personnalise", label: "Personnalisé" },
 ];
 
-const MONTH_NAMES = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
-const DAY_NAMES = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
-const pad2 = (n) => String(n).padStart(2, "0");
-const parseIsoLocal = (iso) => new Date(`${iso}T00:00:00`);
-const startOfWeek = (date) => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diffToMonday);
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
-const endOfMonthIso = (year, month) => isoOf(new Date(year, month + 1, 0));
-const weekLabel = (startIso) => {
-  const start = parseIsoLocal(startIso);
-  const end = addDays(start, 6);
-  return `${fmtShortDate(isoOf(start))} au ${fmtShortDate(isoOf(end))}`;
-};
-const initialDrill = (level) => {
+function computeRange(periodType, customStart, customEnd) {
   const today = todayDate();
-  const weekStart = isoOf(startOfWeek(today));
-  return { level, year: today.getFullYear(), month: today.getMonth(), weekStart };
-};
-const rangeForDrill = (drill) => {
-  const today = todayDate();
-  if (drill.level === "annee") {
-    const years = [];
-    return { start: "0000-01-01", end: "9999-12-31", title: "Toutes les années", crumb: years };
+  const todayIso = isoOf(today);
+  let start, end;
+  if (periodType === "jour") {
+    start = end = todayIso;
+  } else if (periodType === "semaine") {
+    const day = today.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    start = isoOf(addDays(today, diffToMonday));
+    end = todayIso;
+  } else if (periodType === "mois") {
+    start = isoOf(new Date(today.getFullYear(), today.getMonth(), 1));
+    end = todayIso;
+  } else if (periodType === "annee") {
+    start = isoOf(new Date(today.getFullYear(), 0, 1));
+    end = todayIso;
+  } else {
+    start = customStart || todayIso;
+    end = customEnd || todayIso;
   }
-  if (drill.level === "mois") {
-    return { start: `${drill.year}-01-01`, end: `${drill.year}-12-31`, title: `Année ${drill.year}`, crumb: [String(drill.year)] };
-  }
-  if (drill.level === "semaine") {
-    return { start: `${drill.year}-${pad2(drill.month + 1)}-01`, end: endOfMonthIso(drill.year, drill.month), title: `${MONTH_NAMES[drill.month]} ${drill.year}`, crumb: [String(drill.year), MONTH_NAMES[drill.month]] };
-  }
-  const start = drill.weekStart || isoOf(startOfWeek(today));
-  return { start, end: isoOf(addDays(parseIsoLocal(start), 6)), title: `Semaine du ${weekLabel(start)}`, crumb: [String(drill.year), MONTH_NAMES[drill.month], weekLabel(start)] };
-};
-const previousRangeFor = ({ start, end }) => {
-  if (start === "0000-01-01") return { prevStart: "0000-01-01", prevEnd: "0000-01-01" };
-  const startDate = parseIsoLocal(start);
-  const endDate = parseIsoLocal(end);
+  const startDate = new Date(start + "T00:00:00");
+  const endDate = new Date(end + "T00:00:00");
   const lengthDays = Math.max(1, Math.round((endDate - startDate) / 86400000) + 1);
   const prevEnd = addDays(startDate, -1);
   const prevStart = addDays(prevEnd, -(lengthDays - 1));
-  return { prevStart: isoOf(prevStart), prevEnd: isoOf(prevEnd) };
-};
+  return { start, end, prevStart: isoOf(prevStart), prevEnd: isoOf(prevEnd) };
+}
 
 const PERIOD_VS_LABEL = {
   jour: "vs veille", semaine: "vs semaine précédente", mois: "vs mois précédent",
@@ -158,10 +140,9 @@ function KpiCard({ icon: Icon, label, value, accent, t, invert, caption }) {
 
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
-  const row = payload[0]?.payload;
   return (
     <div className="bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg shadow-md px-3 py-2 text-xs font-figures">
-      <div className="text-[var(--text-slate)] mb-1 font-sans">{row?.tooltipLabel || label}</div>
+      <div className="text-[var(--text-slate)] mb-1 font-sans">{label}</div>
       {payload.map((p) => (
         <div key={p.dataKey} className="flex items-center gap-2">
           <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
@@ -169,30 +150,6 @@ function CustomTooltip({ active, payload, label }) {
           <span className="ml-auto font-semibold" style={{ color: COLORS.ink }}>{fmt(p.value)} F</span>
         </div>
       ))}
-      {row?.hint && <div className="font-sans text-[10px] text-[var(--text-slate-light)] mt-1">{row.hint}</div>}
-    </div>
-  );
-}
-
-function SimpleMoneyChart({ title, data, onBarClick }) {
-  return (
-    <div className="surface-card pro-card rounded-2xl p-5 lg:col-span-2">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-4">
-        <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>{title}</div>
-        <div className="text-xs text-[var(--text-slate-light)]">Cliquez sur une barre pour voir le détail.</div>
-      </div>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={data} margin={{ top: 6, right: 6, left: -10, bottom: 0 }} onClick={(state) => state?.activePayload?.[0]?.payload && onBarClick(state.activePayload[0].payload)}>
-          <CartesianGrid stroke={COLORS.line} vertical={false} />
-          <XAxis dataKey="label" tick={{ fontSize: 11, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} interval={0} />
-          <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={46} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="Recette" fill={COLORS.amber} radius={[5, 5, 0, 0]} cursor="pointer" />
-          <Bar dataKey="Dépenses" fill={COLORS.red} radius={[5, 5, 0, 0]} cursor="pointer" />
-          <Bar dataKey="Bénéfice" fill={COLORS.green} radius={[5, 5, 0, 0]} cursor="pointer" />
-        </BarChart>
-      </ResponsiveContainer>
     </div>
   );
 }
@@ -202,7 +159,9 @@ export default function DashboardClient({ vehicles }) {
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [drill, setDrill] = useState(() => initialDrill("mois"));
+  const [periodType, setPeriodType] = useState("mois");
+  const [customStart, setCustomStart] = useState(isoOf(addDays(todayDate(), -30)));
+  const [customEnd, setCustomEnd] = useState(isoOf(todayDate()));
 
   useEffect(() => {
     if (!vehicleId) return;
@@ -219,7 +178,7 @@ export default function DashboardClient({ vehicles }) {
   }, [vehicleId]); // eslint-disable-line
 
   const vehicle = vehicles.find((v) => v.id === vehicleId);
-  const range = useMemo(() => ({ ...rangeForDrill(drill), ...previousRangeFor(rangeForDrill(drill)) }), [drill]);
+  const range = useMemo(() => computeRange(periodType, customStart, customEnd), [periodType, customStart, customEnd]);
 
   const currentRows = useMemo(
     () => entries.filter((e) => e.date >= range.start && e.date <= range.end),
@@ -232,53 +191,18 @@ export default function DashboardClient({ vehicles }) {
 
   const cur = useMemo(() => aggregate(currentRows), [currentRows]);
   const prev = useMemo(() => aggregate(previousRows), [previousRows]);
-  const vsLabel = PERIOD_VS_LABEL[drill.level];
+  const vsLabel = PERIOD_VS_LABEL[periodType];
 
-  const chartData = useMemo(() => {
-    const emptyMetric = () => ({ Recette: 0, Dépenses: 0, Bénéfice: 0 });
-    const addRow = (bucket, row) => {
-      bucket.Recette += Number(row.recette) || 0;
-      bucket.Dépenses += (Number(row.gazoil) || 0) + (Number(row.autres) || 0);
-      bucket.Bénéfice = bucket.Recette - bucket.Dépenses;
-    };
-
-    if (drill.level === "annee") {
-      const years = [...new Set(entries.map((e) => parseIsoLocal(e.date).getFullYear()))].sort((a, b) => a - b);
-      return years.map((year) => {
-        const bucket = { label: String(year), tooltipLabel: `Année ${year}`, level: "annee", year, ...emptyMetric() };
-        entries.filter((e) => parseIsoLocal(e.date).getFullYear() === year).forEach((e) => addRow(bucket, e));
-        return { ...bucket, hint: "Cliquer pour voir les mois" };
-      });
-    }
-
-    if (drill.level === "mois") {
-      return MONTH_NAMES.map((label, month) => {
-        const bucket = { label, tooltipLabel: `${label} ${drill.year}`, level: "mois", year: drill.year, month, ...emptyMetric() };
-        currentRows.filter((e) => parseIsoLocal(e.date).getMonth() === month).forEach((e) => addRow(bucket, e));
-        return { ...bucket, hint: "Cliquer pour voir les semaines" };
-      });
-    }
-
-    if (drill.level === "semaine") {
-      const first = parseIsoLocal(range.start);
-      const last = parseIsoLocal(range.end);
-      const starts = [];
-      for (let d = startOfWeek(first); d <= last; d = addDays(d, 7)) starts.push(isoOf(d));
-      return starts.map((weekStart, idx) => {
-        const weekEnd = isoOf(addDays(parseIsoLocal(weekStart), 6));
-        const bucket = { label: `Sem. ${idx + 1}`, tooltipLabel: weekLabel(weekStart), level: "semaine", year: drill.year, month: drill.month, weekStart, ...emptyMetric() };
-        currentRows.filter((e) => e.date >= weekStart && e.date <= weekEnd).forEach((e) => addRow(bucket, e));
-        return { ...bucket, hint: "Cliquer pour voir les jours" };
-      });
-    }
-
-    return DAY_NAMES.map((label, index) => {
-      const date = isoOf(addDays(parseIsoLocal(range.start), index));
-      const bucket = { label, tooltipLabel: `${label} ${fmtShortDate(date)}`, level: "jour", date, ...emptyMetric() };
-      currentRows.filter((e) => e.date === date).forEach((e) => addRow(bucket, e));
-      return bucket;
-    });
-  }, [currentRows, drill, entries, range]);
+  const chartData = useMemo(
+    () =>
+      [...currentRows].sort((a, b) => a.date.localeCompare(b.date)).map((e) => ({
+        date: fmtShortDate(e.date),
+        Recette: Number(e.recette) || 0,
+        Dépenses: (Number(e.gazoil) || 0) + (Number(e.autres) || 0),
+        Bénéfice: (Number(e.recette) || 0) - ((Number(e.gazoil) || 0) + (Number(e.autres) || 0)),
+      })),
+    [currentRows]
+  );
 
   const recentEntries = useMemo(
     () => [...entries].sort((a, b) => (b.created_at || b.date).localeCompare(a.created_at || a.date)).slice(0, 7),
@@ -345,11 +269,11 @@ export default function DashboardClient({ vehicles }) {
           {PERIODS.map((p) => (
             <button
               key={p.id}
-              onClick={() => setDrill(initialDrill(p.id))}
+              onClick={() => setPeriodType(p.id)}
               className="text-xs font-medium px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors shrink-0 whitespace-nowrap"
               style={{
-                backgroundColor: drill.level === p.id ? "var(--amber)" : "transparent",
-                color: drill.level === p.id ? "#1A1200" : "var(--text-slate)",
+                backgroundColor: periodType === p.id ? "var(--amber)" : "transparent",
+                color: periodType === p.id ? "#1A1200" : "var(--text-slate)",
               }}
             >
               {p.label}
@@ -357,6 +281,14 @@ export default function DashboardClient({ vehicles }) {
           ))}
         </div>
       </div>
+
+      {periodType === "personnalise" && (
+        <div className="flex flex-wrap items-center gap-2 mb-4 text-sm">
+          <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5 text-xs min-w-0" />
+          <span className="text-[var(--text-slate-light)] text-xs">au</span>
+          <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5 text-xs min-w-0" />
+        </div>
+      )}
 
       <div className="road-divider mb-6" style={{ color: "var(--amber)" }} />
 
@@ -381,33 +313,77 @@ export default function DashboardClient({ vehicles }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
-              <div className="surface-card rounded-2xl p-4 lg:col-span-2">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.16em] text-[var(--text-slate-light)]">Vue simple</div>
-                    <div className="text-base font-semibold text-[var(--text-ink)]">{range.title}</div>
-                    <div className="text-xs text-[var(--text-slate)] mt-1">Barres jaunes = argent reçu, rouges = dépenses, vertes = bénéfice.</div>
-                  </div>
-                  {drill.level !== "annee" && (
-                    <button
-                      onClick={() => setDrill((d) => d.level === "jour" ? { level: "semaine", year: d.year, month: d.month } : d.level === "semaine" ? { level: "mois", year: d.year } : initialDrill("annee"))}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-line)] px-3 py-2 text-xs font-semibold text-[var(--text-slate)] hover:bg-[var(--bg-page)]"
-                    >
-                      <ArrowLeft size={14} /> Retour
-                    </button>
-                  )}
-                </div>
-                {range.crumb.length > 0 && <div className="mt-3 text-xs text-[var(--text-slate-light)]">Année / {range.crumb.join(" / ")}</div>}
+              <div className="surface-card pro-card rounded-2xl p-5">
+                <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Évolution des recettes</div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gRec" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={COLORS.amber} stopOpacity={0.35} />
+                        <stop offset="100%" stopColor={COLORS.amber} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke={COLORS.line} vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area type="monotone" dataKey="Recette" stroke={COLORS.amber} fill="url(#gRec)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
-              <SimpleMoneyChart
-                title="Recette, dépenses et bénéfice"
-                data={chartData}
-                onBarClick={(row) => {
-                  if (row.level === "annee") setDrill({ level: "mois", year: row.year });
-                  if (row.level === "mois") setDrill({ level: "semaine", year: row.year, month: row.month });
-                  if (row.level === "semaine") setDrill({ level: "jour", year: row.year, month: row.month, weekStart: row.weekStart });
-                }}
-              />
+
+              <div className="surface-card pro-card rounded-2xl p-5">
+                <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Évolution des dépenses</div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gDep" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={COLORS.red} stopOpacity={0.3} />
+                        <stop offset="100%" stopColor={COLORS.red} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke={COLORS.line} vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area type="monotone" dataKey="Dépenses" stroke={COLORS.red} fill="url(#gDep)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="surface-card pro-card rounded-2xl p-5">
+                <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Recettes vs Dépenses</div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                    <CartesianGrid stroke={COLORS.line} vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="Recette" fill={COLORS.amber} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="Dépenses" fill={COLORS.red} radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="surface-card pro-card rounded-2xl p-5">
+                <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Bénéfice net</div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gBen" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={COLORS.green} stopOpacity={0.35} />
+                        <stop offset="100%" stopColor={COLORS.green} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke={COLORS.line} vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area type="monotone" dataKey="Bénéfice" stroke={COLORS.green} fill="url(#gBen)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
         </>
