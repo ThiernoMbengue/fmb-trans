@@ -66,3 +66,93 @@ html, body {
 }
 
 
+
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--fleet-bright) 14%, transparent), transparent 34rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-page) 96%, white), var(--bg-page));
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--amber) 28%, transparent);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes soft-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.04); }
+}
+
+.surface-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 96%, white), var(--bg-surface));
+  border: 1px solid var(--border-line);
+  box-shadow: 0 18px 45px color-mix(in srgb, var(--fleet) 9%, transparent);
+}
+
+.pro-card {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.pro-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--fleet-bright) 28%, var(--border-line));
+  box-shadow: 0 18px 38px color-mix(in srgb, var(--fleet) 12%, transparent);
+}
+
+.animate-fade-up {
+  animation: fade-up 420ms ease both;
+}
+
+.status-dot {
+  position: relative;
+}
+
+.status-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.16;
+  animation: soft-pulse 2.4s ease-in-out infinite;
+}
+
+button, a, input, select {
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--fleet-bright) 65%, white);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
