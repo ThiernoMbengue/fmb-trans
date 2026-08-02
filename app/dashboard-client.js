@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart, Bar, Cell,
+  BarChart, Bar, Cell, Area, AreaChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
   Coins, Wallet, TrendingUp, HandCoins, CalendarCheck, Gauge,
-  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Loader2, Bus, Search,
+  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Bus, Search,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -130,7 +130,20 @@ function TrendChip({ t, invert = false }) {
   );
 }
 
-function KpiCard({ icon: Icon, label, value, accent, t, invert, caption }) {
+function Sparkline({ data, color }) {
+  if (!data || data.length < 2) return null;
+  return (
+    <div className="h-7 -mx-1 -mb-1">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+          <Area type="monotone" dataKey="v" stroke={color} fill={color} fillOpacity={0.16} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function KpiCard({ icon: Icon, label, value, accent, t, invert, caption, spark }) {
   return (
     <div className="surface-card pro-card rounded-2xl p-3.5 sm:p-4 flex flex-col gap-2.5 sm:gap-3 min-w-0">
       <div className="flex items-center justify-between gap-2 min-w-0">
@@ -151,8 +164,13 @@ function KpiCard({ icon: Icon, label, value, accent, t, invert, caption }) {
         <div className="text-[11px] sm:text-xs text-[var(--text-slate)] mt-0.5 leading-snug">{label}</div>
         {caption && <div className="text-[10px] text-[var(--text-slate-light)] mt-1">{caption}</div>}
       </div>
+      {spark && <Sparkline data={spark} color={accent} />}
     </div>
   );
+}
+
+function Skeleton({ className }) {
+  return <div className={`animate-pulse rounded-xl bg-[var(--border-line)] ${className || ""}`} />;
 }
 
 function DetailItem({ label, value, caption, accent }) {
@@ -221,6 +239,20 @@ export default function DashboardClient({ vehicles }) {
   const cur = useMemo(() => aggregate(currentRows), [currentRows]);
   const prev = useMemo(() => aggregate(previousRows), [previousRows]);
   const vsLabel = PERIOD_VS_LABEL[periodType];
+
+  const sparkSeries = useMemo(() => {
+    const sorted = [...currentRows].sort((a, b) => a.date.localeCompare(b.date));
+    const recette = [], depenses = [], benefice = [], net = [];
+    for (const e of sorted) {
+      const r = Number(e.recette) || 0;
+      const d = (Number(e.gazoil) || 0) + (Number(e.autres) || 0);
+      recette.push({ v: r });
+      depenses.push({ v: d });
+      benefice.push({ v: r - d });
+      net.push({ v: Number(e.net) || 0 });
+    }
+    return { recette, depenses, benefice, net };
+  }, [currentRows]);
 
   const rangeDays = useMemo(() => {
     const s = new Date(range.start + "T00:00:00");
@@ -353,16 +385,21 @@ export default function DashboardClient({ vehicles }) {
       <div className="road-divider mb-6" style={{ color: "var(--amber)" }} />
 
       {loading ? (
-        <div className="flex items-center gap-2 text-[var(--text-slate-light)] text-sm py-10">
-          <Loader2 size={16} className="animate-spin" /> Chargement des données…
-        </div>
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-3.5">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-[104px] sm:h-[118px]" />
+            ))}
+          </div>
+          <Skeleton className="h-[280px] mt-6" />
+        </>
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-3.5">
-            <KpiCard icon={Coins} label="Recette totale" value={`${fmt(cur.recette)} F`} accent={COLORS.amber} t={trendCalc(cur.recette, prev.recette)} caption={vsLabel} />
-            <KpiCard icon={Wallet} label="Dépenses totales" value={`${fmt(cur.depenses)} F`} accent={COLORS.red} t={trendCalc(cur.depenses, prev.depenses)} invert caption={vsLabel} />
-            <KpiCard icon={TrendingUp} label="Bénéfice" value={`${fmt(cur.benefice)} F`} accent={COLORS.green} t={trendCalc(cur.benefice, prev.benefice)} caption={vsLabel} />
-            <KpiCard icon={HandCoins} label="Net versé au propriétaire" value={`${fmt(cur.net)} F`} accent={COLORS.fleet} t={trendCalc(cur.net, prev.net)} caption={vsLabel} />
+            <KpiCard icon={Coins} label="Recette totale" value={`${fmt(cur.recette)} F`} accent={COLORS.amber} t={trendCalc(cur.recette, prev.recette)} caption={vsLabel} spark={sparkSeries.recette} />
+            <KpiCard icon={Wallet} label="Dépenses totales" value={`${fmt(cur.depenses)} F`} accent={COLORS.red} t={trendCalc(cur.depenses, prev.depenses)} invert caption={vsLabel} spark={sparkSeries.depenses} />
+            <KpiCard icon={TrendingUp} label="Bénéfice" value={`${fmt(cur.benefice)} F`} accent={COLORS.green} t={trendCalc(cur.benefice, prev.benefice)} caption={vsLabel} spark={sparkSeries.benefice} />
+            <KpiCard icon={HandCoins} label="Net versé au propriétaire" value={`${fmt(cur.net)} F`} accent={COLORS.fleet} t={trendCalc(cur.net, prev.net)} caption={vsLabel} spark={sparkSeries.net} />
             <KpiCard icon={CalendarCheck} label="Jours d'activité" value={cur.jours} accent={COLORS.purple} t={trendCalc(cur.jours, prev.jours)} caption={vsLabel} />
             <KpiCard icon={Gauge} label="Taux de marge" value={`${cur.marge.toFixed(0)}%`} accent={COLORS.green} t={trendCalc(cur.marge, prev.marge)} caption={vsLabel} />
           </div>
