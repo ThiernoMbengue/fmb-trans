@@ -49,6 +49,7 @@ const METRICS = [
   { id: "Bénéfice", label: "Bénéfice", color: "green" },
 ];
 const GRANULARITY_LABEL = { day: "jour", week: "semaine", month: "mois" };
+const ALL_ID = "__all__";
 
 const PERIODS = [
   { id: "jour", label: "Jour" },
@@ -213,18 +214,20 @@ export default function DashboardClient({ vehicles, role }) {
   useEffect(() => {
     if (!vehicleId) return;
     setLoading(true);
-    supabase
-      .from("entries")
-      .select("*")
-      .eq("vehicle_id", vehicleId)
-      .order("date", { ascending: true })
-      .then(({ data }) => {
-        setEntries(data || []);
-        setLoading(false);
-      });
+    const query =
+      vehicleId === ALL_ID
+        ? supabase.from("entries").select("*").in("vehicle_id", vehicles.map((v) => v.id)).order("date", { ascending: true })
+        : supabase.from("entries").select("*").eq("vehicle_id", vehicleId).order("date", { ascending: true });
+    query.then(({ data }) => {
+      setEntries(data || []);
+      setLoading(false);
+    });
   }, [vehicleId]); // eslint-disable-line
 
-  const vehicle = vehicles.find((v) => v.id === vehicleId);
+  const isAllMode = vehicleId === ALL_ID;
+  const vehicle = isAllMode ? null : vehicles.find((v) => v.id === vehicleId);
+  const vehicleById = useMemo(() => Object.fromEntries(vehicles.map((v) => [v.id, v])), [vehicles]);
+  const allLabel = role === "admin" ? "Toute la flotte" : "Tous mes véhicules";
   const range = useMemo(() => computeRange(periodType, customStart, customEnd), [periodType, customStart, customEnd]);
 
   const currentRows = useMemo(
@@ -291,8 +294,8 @@ export default function DashboardClient({ vehicles, role }) {
 
   const activeMetric = METRICS.find((m) => m.id === metric);
 
-  const searchResult = useMemo(
-    () => (searchDate ? entries.find((e) => e.date === searchDate) || null : null),
+  const searchResults = useMemo(
+    () => (searchDate ? entries.filter((e) => e.date === searchDate) : []),
     [entries, searchDate]
   );
 
@@ -356,6 +359,7 @@ export default function DashboardClient({ vehicles, role }) {
               className="appearance-none bg-transparent text-sm font-semibold pr-6 focus:outline-none max-w-[180px] sm:max-w-none truncate"
               style={{ color: COLORS.ink }}
             >
+              {vehicles.length > 1 && <option value={ALL_ID}>{allLabel}</option>}
               {vehicles.map((v) => (
                 <option key={v.id} value={v.id}>{v.marque} — {v.immatriculation}</option>
               ))}
@@ -363,6 +367,7 @@ export default function DashboardClient({ vehicles, role }) {
             <ChevronDown size={13} className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-slate-light)]" />
           </div>
           {vehicle && <div className="text-xs text-[var(--text-slate-light)] hidden md:block border-l border-[var(--border-line)] pl-2.5 ml-0.5 shrink-0">{vehicle.chauffeur}</div>}
+          {isAllMode && <div className="text-xs text-[var(--text-slate-light)] hidden md:block border-l border-[var(--border-line)] pl-2.5 ml-0.5 shrink-0">{vehicles.length} véhicules combinés</div>}
         </div>
 
         <div className="flex items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl p-1 overflow-x-auto max-w-full">
@@ -465,7 +470,7 @@ export default function DashboardClient({ vehicles, role }) {
             <table className="w-full text-sm font-figures">
               <thead>
                 <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                  {["Date", "Receveur", "Recette", "Gazoil", "Autres", "Net versé"].map((h) => (
+                  {[...(isAllMode ? ["Véhicule"] : []), "Date", "Receveur", "Recette", "Gazoil", "Autres", "Net versé"].map((h) => (
                     <th key={h} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
                   ))}
                 </tr>
@@ -473,10 +478,15 @@ export default function DashboardClient({ vehicles, role }) {
               <tbody>
                 {recentEntries.map((e) => (
                   <tr
-                    key={e.date}
+                    key={`${e.vehicle_id}-${e.date}`}
                     className="border-t"
                     style={{ borderColor: COLORS.line, color: Number(e.recette) === 0 ? "var(--text-slate-light)" : COLORS.ink }}
                   >
+                    {isAllMode && (
+                      <td className="px-5 py-2 font-sans text-xs text-[var(--text-slate-light)]">
+                        {vehicleById[e.vehicle_id] ? `${vehicleById[e.vehicle_id].marque} — ${vehicleById[e.vehicle_id].immatriculation}` : "—"}
+                      </td>
+                    )}
                     <td className="px-5 py-2">{e.date}</td>
                     <td className="px-5 py-2 font-sans">{e.receveur}</td>
                     <td className="px-5 py-2">{fmt(e.recette)}</td>
@@ -514,19 +524,32 @@ export default function DashboardClient({ vehicles, role }) {
           </div>
 
           {searchDate && (
-            searchResult ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-4">
-                <DetailItem label="Date" value={searchResult.date} />
-                <DetailItem label="Receveur" value={searchResult.receveur || "—"} />
-                <DetailItem label="Recette" value={`${fmt(searchResult.recette)} F`} accent={COLORS.amber} />
-                <DetailItem label="Gazoil" value={`${fmt(searchResult.gazoil)} F`} caption={searchResult.gazoil_note} accent={COLORS.red} />
-                <DetailItem label="Autres dépenses" value={`${fmt(searchResult.autres)} F`} caption={searchResult.autres_note} accent={COLORS.red} />
-                <DetailItem label="Total caisse" value={`${fmt(searchResult.total_caisse)} F`} />
-                <DetailItem label="Net versé" value={`${fmt(searchResult.net)} F`} accent={COLORS.green} />
+            searchResults.length > 0 ? (
+              <div className="flex flex-col gap-4 mt-4">
+                {searchResults.map((r) => (
+                  <div key={`${r.vehicle_id}-${r.date}`}>
+                    {isAllMode && vehicleById[r.vehicle_id] && (
+                      <div className="text-xs font-semibold mb-2" style={{ color: COLORS.fleet }}>
+                        {vehicleById[r.vehicle_id].marque} — {vehicleById[r.vehicle_id].immatriculation}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      <DetailItem label="Date" value={r.date} />
+                      <DetailItem label="Receveur" value={r.receveur || "—"} />
+                      <DetailItem label="Recette" value={`${fmt(r.recette)} F`} accent={COLORS.amber} />
+                      <DetailItem label="Gazoil" value={`${fmt(r.gazoil)} F`} caption={r.gazoil_note} accent={COLORS.red} />
+                      <DetailItem label="Autres dépenses" value={`${fmt(r.autres)} F`} caption={r.autres_note} accent={COLORS.red} />
+                      <DetailItem label="Total caisse" value={`${fmt(r.total_caisse)} F`} />
+                      <DetailItem label="Net versé" value={`${fmt(r.net)} F`} accent={COLORS.green} />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="text-sm text-[var(--text-slate-light)] mt-4">
-                Aucune saisie trouvée le {searchDate} pour {vehicle?.marque} — {vehicle?.immatriculation}.
+                {isAllMode
+                  ? `Aucune saisie trouvée le ${searchDate}.`
+                  : `Aucune saisie trouvée le ${searchDate} pour ${vehicle?.marque} — ${vehicle?.immatriculation}.`}
               </div>
             )
           )}

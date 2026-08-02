@@ -13,10 +13,13 @@ export default async function VehiculesPage() {
 
   const [{ data: vehicles }, { data: owners }] = await Promise.all([
     supabase.from("vehicles").select("*").order("created_at", { ascending: true }),
-    supabase.from("profiles").select("id, nom").eq("role", "proprietaire").order("nom", { ascending: true }),
+    supabase.from("profiles").select("id, nom, email").eq("role", "proprietaire").order("nom", { ascending: true }),
   ]);
 
-  const ownerName = (id) => owners?.find((o) => o.id === id)?.nom || null;
+  const ownerName = (id) => {
+    const o = owners?.find((x) => x.id === id);
+    return o ? (o.nom || o.email) : null;
+  };
 
   return (
     <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto">

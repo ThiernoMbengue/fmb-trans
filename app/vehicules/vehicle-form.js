@@ -34,7 +34,7 @@ export default function VehicleForm({ owners }) {
         <select name="owner_id" defaultValue="" className={inputClass}>
           <option value="">— Compte propriétaire lié (optionnel) —</option>
           {(owners || []).map((o) => (
-            <option key={o.id} value={o.id}>{o.nom || o.id}</option>
+            <option key={o.id} value={o.id}>{o.nom || o.email || o.id}</option>
           ))}
         </select>
         <input name="chauffeur" placeholder="Chauffeur" className={inputClass} />

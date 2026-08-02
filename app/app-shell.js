@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard, ClipboardList, HandCoins, Bus, FileText,
+  LayoutDashboard, ClipboardList, HandCoins, Bus, FileText, Users,
   LogOut, LogIn, Moon, Sun, Menu, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -14,7 +14,8 @@ const NAV_ITEMS = [
   { href: "/avances", label: "Avances", icon: HandCoins, roles: ["admin", "proprietaire"] },
   { href: "/saisie", label: "Saisie", icon: ClipboardList, roles: ["admin"] },
   { href: "/vehicules", label: "Véhicules", icon: Bus, roles: ["admin"] },
-  { href: "/rapports", label: "Rapports", icon: FileText, roles: ["admin"] },
+  { href: "/rapports", label: "Rapports", icon: FileText, roles: ["admin", "proprietaire"] },
+  { href: "/comptes", label: "Comptes", icon: Users, roles: ["admin"] },
 ];
 
 const ROLE_LABEL = { admin: "Gestionnaire", proprietaire: "Propriétaire" };

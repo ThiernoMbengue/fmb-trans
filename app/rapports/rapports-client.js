@@ -20,7 +20,7 @@ const DOC_TYPES = [
   { id: "decompte", label: "Décompte de solde", desc: "Combine versements et avances pour calculer le solde final." },
 ];
 
-export default function RapportsClient({ vehicles }) {
+export default function RapportsClient({ vehicles, role }) {
   const supabase = createClient();
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
   const [dateDebut, setDateDebut] = useState(firstOfMonthISO());
@@ -84,7 +84,9 @@ export default function RapportsClient({ vehicles }) {
   if (!vehicles.length) {
     return (
       <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto text-sm text-[var(--text-slate-light)]">
-        Aucun véhicule enregistré. Ajoute d'abord un véhicule dans l'onglet « Véhicules ».
+        {role === "admin"
+          ? "Aucun véhicule enregistré. Ajoute d'abord un véhicule dans l'onglet « Véhicules »."
+          : "Aucun véhicule ne vous a été attribué pour le moment. Contactez le gestionnaire."}
       </main>
     );
   }

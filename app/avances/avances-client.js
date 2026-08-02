@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Save, Trash2, Loader2, AlertCircle, HandCoins, TriangleAlert } from "lucide-react";
+import { Save, Trash2, Loader2, AlertCircle, HandCoins, TriangleAlert, Send, Check, X, Clock } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { saveAvance, deleteAvance } from "./actions";
+import { saveAvance, deleteAvance, requestAvance, cancelAvanceRequest, resolveAvanceRequest } from "./actions";
 
 const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)", green: "var(--green)", red: "var(--red)", amber: "var(--amber)", line: "var(--border-line)" };
 const inputClass =
@@ -16,6 +16,9 @@ const TYPE_LABEL = {
   depense_imprevue: "Dépense imprévue (véhicule)",
   remboursement: "Remboursement reçu",
 };
+
+const STATUS_LABEL = { en_attente: "En attente", approuvee: "Approuvée", refusee: "Refusée" };
+const STATUS_COLOR = { en_attente: "amber", approuvee: "green", refusee: "red" };
 
 function Field({ label, children }) {
   return (
@@ -35,10 +38,13 @@ export default function AvancesClient({ vehicles, role }) {
   const vehicle = vehicles.find((v) => v.id === vehicleId) || null;
 
   const [rows, setRows] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [form, setForm] = useState(emptyForm());
+  const [requestForm, setRequestForm] = useState({ montant: "", note: "" });
+  const [resolvingId, setResolvingId] = useState(null);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -47,12 +53,12 @@ export default function AvancesClient({ vehicles, role }) {
 
   const loadRows = async (vId) => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("avances")
-      .select("*")
-      .eq("vehicle_id", vId)
-      .order("date", { ascending: false });
-    if (!error) setRows(data || []);
+    const [avancesRes, requestsRes] = await Promise.all([
+      supabase.from("avances").select("*").eq("vehicle_id", vId).order("date", { ascending: false }),
+      supabase.from("avance_requests").select("*").eq("vehicle_id", vId).order("created_at", { ascending: false }),
+    ]);
+    if (!avancesRes.error) setRows(avancesRes.data || []);
+    if (!requestsRes.error) setRequests(requestsRes.data || []);
     setLoading(false);
   };
 
@@ -81,6 +87,42 @@ export default function AvancesClient({ vehicles, role }) {
     if (res?.error) showToast("Erreur: " + res.error, "error");
     else {
       showToast("Supprimé");
+      await loadRows(vehicleId);
+    }
+  };
+
+  const onSendRequest = async () => {
+    if (!vehicleId || !requestForm.montant) return;
+    setSaving(true);
+    const res = await requestAvance({ vehicleId, ...requestForm });
+    setSaving(false);
+    if (res?.error) {
+      showToast("Erreur: " + res.error, "error");
+    } else {
+      showToast("Demande envoyée");
+      setRequestForm({ montant: "", note: "" });
+      await loadRows(vehicleId);
+    }
+  };
+
+  const onCancelRequest = async (id) => {
+    setSaving(true);
+    const res = await cancelAvanceRequest(id);
+    setSaving(false);
+    if (res?.error) showToast("Erreur: " + res.error, "error");
+    else {
+      showToast("Demande annulée");
+      await loadRows(vehicleId);
+    }
+  };
+
+  const onResolve = async (id, decision) => {
+    setResolvingId(id);
+    const res = await resolveAvanceRequest(id, decision);
+    setResolvingId(null);
+    if (res?.error) showToast("Erreur: " + res.error, "error");
+    else {
+      showToast(decision === "approuvee" ? "Demande approuvée" : "Demande refusée");
       await loadRows(vehicleId);
     }
   };
@@ -160,6 +202,103 @@ export default function AvancesClient({ vehicles, role }) {
           <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: COLORS.ink }}>{fmt(totals.soldeDu)} F</div>
         </div>
       </div>
+
+      {!isAdmin && (
+        <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6 mb-6">
+          <div className="text-sm font-semibold mb-1" style={{ color: COLORS.ink }}>Demander une avance</div>
+          <p className="text-xs text-[var(--text-slate-light)] mb-4">
+            Ta demande est envoyée au gestionnaire, qui l'approuve ou la refuse.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Field label="Montant (FCFA)">
+              <input type="number" className={inputClass} value={requestForm.montant} onChange={(e) => setRequestForm({ ...requestForm, montant: e.target.value })} placeholder="0" />
+            </Field>
+            <div className="md:col-span-2">
+              <Field label="Note">
+                <input className={inputClass} value={requestForm.note} onChange={(e) => setRequestForm({ ...requestForm, note: e.target.value })} placeholder="Ex: besoin urgent, dépannage véhicule…" />
+              </Field>
+            </div>
+          </div>
+          <button
+            onClick={onSendRequest}
+            disabled={saving || !requestForm.montant}
+            className="mt-4 flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white disabled:opacity-60"
+            style={{ backgroundColor: COLORS.fleet }}
+          >
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            Envoyer la demande
+          </button>
+
+          {requests.length > 0 && (
+            <div className="mt-6 pt-5 border-t" style={{ borderColor: COLORS.line }}>
+              <div className="text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] mb-3">Vos demandes</div>
+              <div className="flex flex-col gap-2">
+                {requests.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-3 text-sm bg-[var(--bg-page)] rounded-lg px-3 py-2">
+                    <div className="min-w-0">
+                      <span className="font-mono font-semibold" style={{ color: COLORS.ink }}>{fmt(r.montant)} F</span>
+                      {r.note && <span className="text-[var(--text-slate)] ml-2">— {r.note}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className="text-xs font-medium px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: `color-mix(in srgb, ${COLORS[STATUS_COLOR[r.status]]} 14%, transparent)`, color: COLORS[STATUS_COLOR[r.status]] }}
+                      >
+                        {STATUS_LABEL[r.status]}
+                      </span>
+                      {r.status === "en_attente" && (
+                        <button onClick={() => onCancelRequest(r.id)} className="text-[var(--text-slate-light)] hover:text-[var(--red)]">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isAdmin && requests.some((r) => r.status === "en_attente") && (
+        <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6 mb-6">
+          <div className="flex items-center gap-2 text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>
+            <Clock size={15} color={COLORS.amber} /> Demandes en attente
+          </div>
+          <div className="flex flex-col gap-2">
+            {requests.filter((r) => r.status === "en_attente").map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-3 text-sm bg-[var(--bg-page)] rounded-lg px-3 py-2.5">
+                <div className="min-w-0">
+                  <span className="font-mono font-semibold" style={{ color: COLORS.ink }}>{fmt(r.montant)} F</span>
+                  {r.note && <span className="text-[var(--text-slate)] ml-2">— {r.note}</span>}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {resolvingId === r.id ? (
+                    <Loader2 size={15} className="animate-spin text-[var(--text-slate-light)]" />
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => onResolve(r.id, "approuvee")}
+                        className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg text-white"
+                        style={{ backgroundColor: COLORS.green }}
+                      >
+                        <Check size={13} /> Approuver
+                      </button>
+                      <button
+                        onClick={() => onResolve(r.id, "refusee")}
+                        className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg text-white"
+                        style={{ backgroundColor: COLORS.red }}
+                      >
+                        <X size={13} /> Refuser
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isAdmin && (
         <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6">
