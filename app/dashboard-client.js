@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  AreaChart, Area, BarChart, Bar,
+  BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import {
@@ -312,78 +312,20 @@ export default function DashboardClient({ vehicles }) {
               Aucune saisie sur la période sélectionnée.
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
-              <div className="surface-card pro-card rounded-2xl p-5">
-                <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Évolution des recettes</div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gRec" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={COLORS.amber} stopOpacity={0.35} />
-                        <stop offset="100%" stopColor={COLORS.amber} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid stroke={COLORS.line} vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area type="monotone" dataKey="Recette" stroke={COLORS.amber} fill="url(#gRec)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="surface-card pro-card rounded-2xl p-5">
-                <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Évolution des dépenses</div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gDep" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={COLORS.red} stopOpacity={0.3} />
-                        <stop offset="100%" stopColor={COLORS.red} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid stroke={COLORS.line} vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area type="monotone" dataKey="Dépenses" stroke={COLORS.red} fill="url(#gDep)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="surface-card pro-card rounded-2xl p-5">
-                <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Recettes vs Dépenses</div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-                    <CartesianGrid stroke={COLORS.line} vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="Recette" fill={COLORS.amber} radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="Dépenses" fill={COLORS.red} radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="surface-card pro-card rounded-2xl p-5">
-                <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Bénéfice net</div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gBen" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={COLORS.green} stopOpacity={0.35} />
-                        <stop offset="100%" stopColor={COLORS.green} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid stroke={COLORS.line} vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area type="monotone" dataKey="Bénéfice" stroke={COLORS.green} fill="url(#gBen)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+            <div className="surface-card pro-card rounded-2xl p-5 mt-6">
+              <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Recette, dépenses et bénéfice par jour</div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                  <CartesianGrid stroke={COLORS.line} vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="Recette" fill={COLORS.amber} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Dépenses" fill={COLORS.red} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Bénéfice" fill={COLORS.green} radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
         </>
