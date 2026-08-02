@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
   Coins, Wallet, TrendingUp, HandCoins, CalendarCheck, Gauge,
@@ -32,6 +32,23 @@ const fmtShortDate = (isoStr) => { const [, m, d] = isoStr.split("-"); return `$
 const isoOf = (d) => d.toISOString().slice(0, 10);
 const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
 const todayDate = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+
+const MONTH_LABELS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Jun", "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"];
+const weekStartIso = (isoStr) => {
+  const d = new Date(isoStr + "T00:00:00");
+  const day = d.getDay();
+  return isoOf(addDays(d, day === 0 ? -6 : 1 - day));
+};
+const monthKeyOf = (isoStr) => isoStr.slice(0, 7);
+const fmtWeekLabel = (startIso) => `${fmtShortDate(startIso)}–${fmtShortDate(isoOf(addDays(new Date(startIso + "T00:00:00"), 6)))}`;
+const fmtMonthLabel = (key) => { const [y, m] = key.split("-"); return `${MONTH_LABELS[Number(m) - 1]} ${y.slice(2)}`; };
+
+const METRICS = [
+  { id: "Recette", label: "Recette", color: "amber" },
+  { id: "Dépenses", label: "Dépenses", color: "red" },
+  { id: "Bénéfice", label: "Bénéfice", color: "green" },
+];
+const GRANULARITY_LABEL = { day: "jour", week: "semaine", month: "mois" };
 
 const PERIODS = [
   { id: "jour", label: "Jour" },
@@ -162,6 +179,7 @@ export default function DashboardClient({ vehicles }) {
   const [periodType, setPeriodType] = useState("mois");
   const [customStart, setCustomStart] = useState(isoOf(addDays(todayDate(), -30)));
   const [customEnd, setCustomEnd] = useState(isoOf(todayDate()));
+  const [metric, setMetric] = useState("Recette");
 
   useEffect(() => {
     if (!vehicleId) return;
@@ -193,16 +211,42 @@ export default function DashboardClient({ vehicles }) {
   const prev = useMemo(() => aggregate(previousRows), [previousRows]);
   const vsLabel = PERIOD_VS_LABEL[periodType];
 
-  const chartData = useMemo(
-    () =>
-      [...currentRows].sort((a, b) => a.date.localeCompare(b.date)).map((e) => ({
-        date: fmtShortDate(e.date),
+  const rangeDays = useMemo(() => {
+    const s = new Date(range.start + "T00:00:00");
+    const e = new Date(range.end + "T00:00:00");
+    return Math.max(1, Math.round((e - s) / 86400000) + 1);
+  }, [range]);
+  const granularity = rangeDays <= 31 ? "day" : rangeDays <= 93 ? "week" : "month";
+
+  const chartData = useMemo(() => {
+    const sorted = [...currentRows].sort((a, b) => a.date.localeCompare(b.date));
+    if (granularity === "day") {
+      return sorted.map((e) => ({
+        label: fmtShortDate(e.date),
         Recette: Number(e.recette) || 0,
         Dépenses: (Number(e.gazoil) || 0) + (Number(e.autres) || 0),
         Bénéfice: (Number(e.recette) || 0) - ((Number(e.gazoil) || 0) + (Number(e.autres) || 0)),
-      })),
-    [currentRows]
-  );
+      }));
+    }
+    const buckets = new Map();
+    for (const e of sorted) {
+      const key = granularity === "week" ? weekStartIso(e.date) : monthKeyOf(e.date);
+      if (!buckets.has(key)) buckets.set(key, { recette: 0, depenses: 0 });
+      const b = buckets.get(key);
+      b.recette += Number(e.recette) || 0;
+      b.depenses += (Number(e.gazoil) || 0) + (Number(e.autres) || 0);
+    }
+    return [...buckets.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, b]) => ({
+        label: granularity === "week" ? fmtWeekLabel(key) : fmtMonthLabel(key),
+        Recette: b.recette,
+        Dépenses: b.depenses,
+        Bénéfice: b.recette - b.depenses,
+      }));
+  }, [currentRows, granularity]);
+
+  const activeMetric = METRICS.find((m) => m.id === metric);
 
   const recentEntries = useMemo(
     () => [...entries].sort((a, b) => (b.created_at || b.date).localeCompare(a.created_at || a.date)).slice(0, 7),
@@ -313,17 +357,37 @@ export default function DashboardClient({ vehicles }) {
             </div>
           ) : (
             <div className="surface-card pro-card rounded-2xl p-5 mt-6">
-              <div className="text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>Recette, dépenses et bénéfice par jour</div>
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>
+                  {activeMetric.label} par {GRANULARITY_LABEL[granularity]}
+                </div>
+                <div className="flex items-center gap-1 bg-[var(--bg-page)] border border-[var(--border-line)] rounded-xl p-1">
+                  {METRICS.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setMetric(m.id)}
+                      className="text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
+                      style={{
+                        backgroundColor: metric === m.id ? COLORS[m.color] : "transparent",
+                        color: metric === m.id ? "#fff" : COLORS.slate,
+                      }}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
                   <CartesianGrid stroke={COLORS.line} vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="Recette" fill={COLORS.amber} radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="Dépenses" fill={COLORS.red} radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="Bénéfice" fill={COLORS.green} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey={metric} radius={[4, 4, 0, 0]}>
+                    {chartData.map((d, i) => (
+                      <Cell key={i} fill={metric === "Bénéfice" ? (d.Bénéfice >= 0 ? COLORS.green : COLORS.red) : COLORS[activeMetric.color]} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
