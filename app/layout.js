@@ -1,10 +1,21 @@
 import "./globals.css";
 import AppShell from "./app-shell";
+import RegisterSW from "./register-sw";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
   title: "FMB Trans-Mobilité Services",
   description: "Suivi de flotte — versements, avances et rapports",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "FMB Trans",
+  },
+};
+
+export const viewport = {
+  themeColor: "#14324D",
 };
 
 export default async function RootLayout({ children }) {
@@ -23,6 +34,7 @@ export default async function RootLayout({ children }) {
         />
       </head>
       <body style={{ fontFamily: "'Inter', ui-sans-serif, system-ui" }}>
+        <RegisterSW />
         <AppShell user={user}>{children}</AppShell>
       </body>
     </html>
