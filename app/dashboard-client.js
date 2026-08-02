@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import {
   Coins, Wallet, TrendingUp, HandCoins, CalendarCheck, Gauge,
-  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Loader2, Bus,
+  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Loader2, Bus, Search,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -155,6 +155,16 @@ function KpiCard({ icon: Icon, label, value, accent, t, invert, caption }) {
   );
 }
 
+function DetailItem({ label, value, caption, accent }) {
+  return (
+    <div className="rounded-xl bg-[var(--bg-page)] p-3 min-w-0">
+      <div className="text-[11px] text-[var(--text-slate)] mb-1">{label}</div>
+      <div className="font-figures text-base font-semibold break-words" style={{ color: accent || COLORS.ink }}>{value}</div>
+      {caption && <div className="text-[11px] text-[var(--text-slate-light)] mt-1 break-words">{caption}</div>}
+    </div>
+  );
+}
+
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
   return (
@@ -180,6 +190,7 @@ export default function DashboardClient({ vehicles }) {
   const [customStart, setCustomStart] = useState(isoOf(addDays(todayDate(), -30)));
   const [customEnd, setCustomEnd] = useState(isoOf(todayDate()));
   const [metric, setMetric] = useState("Recette");
+  const [searchDate, setSearchDate] = useState("");
 
   useEffect(() => {
     if (!vehicleId) return;
@@ -247,6 +258,11 @@ export default function DashboardClient({ vehicles }) {
   }, [currentRows, granularity]);
 
   const activeMetric = METRICS.find((m) => m.id === metric);
+
+  const searchResult = useMemo(
+    () => (searchDate ? entries.find((e) => e.date === searchDate) || null : null),
+    [entries, searchDate]
+  );
 
   const recentEntries = useMemo(
     () => [...entries].sort((a, b) => (b.created_at || b.date).localeCompare(a.created_at || a.date)).slice(0, 7),
@@ -427,6 +443,48 @@ export default function DashboardClient({ vehicles }) {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {!loading && (
+        <div className="surface-card pro-card rounded-2xl p-5 mt-6">
+          <div className="flex items-center gap-2 mb-3.5">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 16%, transparent)" }}>
+              <Search size={15} color={COLORS.fleet} />
+            </div>
+            <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>Rechercher un versement par date</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              value={searchDate}
+              onChange={(e) => setSearchDate(e.target.value)}
+              className="bg-[var(--bg-page)] border border-[var(--border-line)] rounded-lg px-3 py-2 text-sm min-w-0"
+            />
+            {searchDate && (
+              <button onClick={() => setSearchDate("")} className="text-xs text-[var(--text-slate-light)] underline underline-offset-2">
+                Effacer
+              </button>
+            )}
+          </div>
+
+          {searchDate && (
+            searchResult ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-4">
+                <DetailItem label="Date" value={searchResult.date} />
+                <DetailItem label="Receveur" value={searchResult.receveur || "—"} />
+                <DetailItem label="Recette" value={`${fmt(searchResult.recette)} F`} accent={COLORS.amber} />
+                <DetailItem label="Gazoil" value={`${fmt(searchResult.gazoil)} F`} caption={searchResult.gazoil_note} accent={COLORS.red} />
+                <DetailItem label="Autres dépenses" value={`${fmt(searchResult.autres)} F`} caption={searchResult.autres_note} accent={COLORS.red} />
+                <DetailItem label="Total caisse" value={`${fmt(searchResult.total_caisse)} F`} />
+                <DetailItem label="Net versé" value={`${fmt(searchResult.net)} F`} accent={COLORS.green} />
+              </div>
+            ) : (
+              <div className="text-sm text-[var(--text-slate-light)] mt-4">
+                Aucune saisie trouvée le {searchDate} pour {vehicle?.marque} — {vehicle?.immatriculation}.
+              </div>
+            )
+          )}
         </div>
       )}
 
