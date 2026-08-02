@@ -10,12 +10,14 @@ import {
 import { createClient } from "@/lib/supabase/client";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Tableau de bord", icon: LayoutDashboard, public: true },
-  { href: "/saisie", label: "Saisie", icon: ClipboardList, public: false },
-  { href: "/avances", label: "Avances", icon: HandCoins, public: false },
-  { href: "/vehicules", label: "Véhicules", icon: Bus, public: false },
-  { href: "/rapports", label: "Rapports", icon: FileText, public: false },
+  { href: "/", label: "Tableau de bord", icon: LayoutDashboard, roles: ["admin", "proprietaire"] },
+  { href: "/avances", label: "Avances", icon: HandCoins, roles: ["admin", "proprietaire"] },
+  { href: "/saisie", label: "Saisie", icon: ClipboardList, roles: ["admin"] },
+  { href: "/vehicules", label: "Véhicules", icon: Bus, roles: ["admin"] },
+  { href: "/rapports", label: "Rapports", icon: FileText, roles: ["admin"] },
 ];
+
+const ROLE_LABEL = { admin: "Gestionnaire", proprietaire: "Propriétaire" };
 
 function ThemeToggle({ className }) {
   const [dark, setDark] = useState(false);
@@ -45,17 +47,17 @@ function ThemeToggle({ className }) {
   );
 }
 
-function SidebarContent({ user, pathname, onNavigate }) {
+function SidebarContent({ user, role, pathname, onNavigate }) {
   const router = useRouter();
   const supabase = createClient();
 
   const logout = async () => {
     await supabase.auth.signOut();
-    router.push("/");
+    router.push("/login");
     router.refresh();
   };
 
-  const items = NAV_ITEMS.filter((it) => it.public || user);
+  const items = NAV_ITEMS.filter((it) => role && it.roles.includes(role));
 
   return (
     <div className="flex flex-col h-full">
@@ -95,12 +97,17 @@ function SidebarContent({ user, pathname, onNavigate }) {
       <div className="px-5 pb-3">
         <div className="road-divider text-white/20 mb-4" />
         {user ? (
-          <button
-            onClick={logout}
-            className="w-full flex items-center gap-2 justify-center text-sm font-medium px-3 py-2.5 rounded-lg text-white/85 border border-white/15 hover:bg-white/5"
-          >
-            <LogOut size={14} /> Déconnexion
-          </button>
+          <>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-white/40 mb-2 truncate">
+              {ROLE_LABEL[role] || ""} {user.email ? `· ${user.email}` : ""}
+            </div>
+            <button
+              onClick={logout}
+              className="w-full flex items-center gap-2 justify-center text-sm font-medium px-3 py-2.5 rounded-lg text-white/85 border border-white/15 hover:bg-white/5"
+            >
+              <LogOut size={14} /> Déconnexion
+            </button>
+          </>
         ) : (
           <Link
             href="/login"
@@ -119,7 +126,7 @@ function SidebarContent({ user, pathname, onNavigate }) {
   );
 }
 
-export default function AppShell({ user, children }) {
+export default function AppShell({ user, role, children }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -132,7 +139,7 @@ export default function AppShell({ user, children }) {
         className="hidden md:flex flex-col w-64 shrink-0 fixed inset-y-0 left-0 z-30"
         style={{ backgroundColor: "var(--bg-sidebar)" }}
       >
-        <SidebarContent user={user} pathname={pathname} />
+        <SidebarContent user={user} role={role} pathname={pathname} />
       </aside>
 
       {/* Sidebar mobile (drawer) */}
@@ -145,7 +152,7 @@ export default function AppShell({ user, children }) {
               </button>
             </div>
             <div className="flex-1 -mt-10">
-              <SidebarContent user={user} pathname={pathname} onNavigate={() => setMobileOpen(false)} />
+              <SidebarContent user={user} role={role} pathname={pathname} onNavigate={() => setMobileOpen(false)} />
             </div>
           </div>
           <div className="flex-1 bg-black/50" onClick={() => setMobileOpen(false)} />

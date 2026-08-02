@@ -2,6 +2,7 @@ import "./globals.css";
 import AppShell from "./app-shell";
 import RegisterSW from "./register-sw";
 import { createClient } from "@/lib/supabase/server";
+import { getRole } from "@/lib/supabase/role";
 
 export const metadata = {
   title: "FMB Trans-Mobilité Services",
@@ -20,9 +21,7 @@ export const viewport = {
 
 export default async function RootLayout({ children }) {
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, role } = await getRole(supabase);
 
   return (
     <html lang="fr">
@@ -35,7 +34,7 @@ export default async function RootLayout({ children }) {
       </head>
       <body style={{ fontFamily: "'Inter', ui-sans-serif, system-ui" }}>
         <RegisterSW />
-        <AppShell user={user}>{children}</AppShell>
+        <AppShell user={user} role={role}>{children}</AppShell>
       </body>
     </html>
   );

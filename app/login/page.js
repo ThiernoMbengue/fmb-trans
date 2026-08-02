@@ -5,7 +5,7 @@ const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)" };
 
 export default function LoginPage({ searchParams }) {
   const error = searchParams?.error;
-  const next = searchParams?.next || "/saisie";
+  const next = searchParams?.next || "/";
 
   return (
     <main className="min-h-[80vh] flex items-center justify-center px-4">
@@ -14,7 +14,7 @@ export default function LoginPage({ searchParams }) {
           Connexion
         </h1>
         <p className="text-xs text-[var(--text-slate-light)] mb-5">
-          Réservé aux personnes autorisées à saisir des versements.
+          Réservé aux comptes gestionnaire et propriétaire.
         </p>
 
         {error && (

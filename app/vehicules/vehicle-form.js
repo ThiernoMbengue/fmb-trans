@@ -7,7 +7,7 @@ import { Save, Loader2 } from "lucide-react";
 const inputClass =
   "w-full text-sm bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30";
 
-export default function VehicleForm() {
+export default function VehicleForm({ owners }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const formRef = useRef(null);
@@ -27,16 +27,22 @@ export default function VehicleForm() {
         Ajouter un véhicule
       </div>
       {error && <div className="text-xs text-white bg-[var(--red)] rounded-lg px-3 py-2 mb-3">{error}</div>}
-      <form ref={formRef} action={onSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-3">
+      <form ref={formRef} action={onSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <input name="marque" placeholder="Marque / modèle" required className={inputClass} />
         <input name="immatriculation" placeholder="Immatriculation" required className={inputClass} />
         <input name="proprietaire" placeholder="Propriétaire" className={inputClass} />
+        <select name="owner_id" defaultValue="" className={inputClass}>
+          <option value="">— Compte propriétaire lié (optionnel) —</option>
+          {(owners || []).map((o) => (
+            <option key={o.id} value={o.id}>{o.nom || o.id}</option>
+          ))}
+        </select>
         <input name="chauffeur" placeholder="Chauffeur" className={inputClass} />
         <input name="taux_chauffeur" type="number" placeholder="Taux chauffeur / jour travaillé (FCFA)" defaultValue={5000} className={inputClass} />
         <button
           type="submit"
           disabled={saving}
-          className="md:col-span-5 mt-1 flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg text-white disabled:opacity-60"
+          className="md:col-span-3 mt-1 flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg text-white disabled:opacity-60"
           style={{ backgroundColor: "var(--fleet)" }}
         >
           {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}

@@ -28,7 +28,8 @@ function Field({ label, children }) {
 
 const emptyForm = () => ({ date: todayISO(), type: "avance_proprietaire", montant: "", note: "" });
 
-export default function AvancesClient({ vehicles }) {
+export default function AvancesClient({ vehicles, role }) {
+  const isAdmin = role === "admin";
   const supabase = createClient();
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
   const vehicle = vehicles.find((v) => v.id === vehicleId) || null;
@@ -95,7 +96,9 @@ export default function AvancesClient({ vehicles }) {
   if (!vehicles.length) {
     return (
       <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto text-sm text-[var(--text-slate-light)]">
-        Aucun véhicule enregistré. Ajoute d'abord un véhicule dans l'onglet « Véhicules ».
+        {isAdmin
+          ? "Aucun véhicule enregistré. Ajoute d'abord un véhicule dans l'onglet « Véhicules »."
+          : "Aucun véhicule ne vous a été attribué pour le moment. Contactez le gestionnaire."}
       </main>
     );
   }
@@ -158,38 +161,40 @@ export default function AvancesClient({ vehicles }) {
         </div>
       </div>
 
-      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6">
-        <div className="text-sm font-semibold mb-5" style={{ color: COLORS.ink }}>Nouvelle entrée</div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Field label="Date">
-            <input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-          </Field>
-          <Field label="Type">
-            <select className={inputClass} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-              <option value="avance_proprietaire">Avance au propriétaire</option>
-              <option value="depense_imprevue">Dépense imprévue (véhicule)</option>
-              <option value="remboursement">Remboursement reçu</option>
-            </select>
-          </Field>
-          <Field label="Montant (FCFA)">
-            <input type="number" className={inputClass} value={form.montant} onChange={(e) => setForm({ ...form, montant: e.target.value })} placeholder="0" />
-          </Field>
+      {isAdmin && (
+        <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6">
+          <div className="text-sm font-semibold mb-5" style={{ color: COLORS.ink }}>Nouvelle entrée</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Field label="Date">
+              <input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+            </Field>
+            <Field label="Type">
+              <select className={inputClass} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                <option value="avance_proprietaire">Avance au propriétaire</option>
+                <option value="depense_imprevue">Dépense imprévue (véhicule)</option>
+                <option value="remboursement">Remboursement reçu</option>
+              </select>
+            </Field>
+            <Field label="Montant (FCFA)">
+              <input type="number" className={inputClass} value={form.montant} onChange={(e) => setForm({ ...form, montant: e.target.value })} placeholder="0" />
+            </Field>
+          </div>
+          <div className="mt-4">
+            <Field label="Note">
+              <input className={inputClass} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Ex: réparation moteur, avance pour dépannage familial…" />
+            </Field>
+          </div>
+          <button
+            onClick={onSave}
+            disabled={saving || !form.montant}
+            className="mt-6 flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white disabled:opacity-60"
+            style={{ backgroundColor: COLORS.green }}
+          >
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+            Enregistrer
+          </button>
         </div>
-        <div className="mt-4">
-          <Field label="Note">
-            <input className={inputClass} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Ex: réparation moteur, avance pour dépannage familial…" />
-          </Field>
-        </div>
-        <button
-          onClick={onSave}
-          disabled={saving || !form.montant}
-          className="mt-6 flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white disabled:opacity-60"
-          style={{ backgroundColor: COLORS.green }}
-        >
-          {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-          Enregistrer
-        </button>
-      </div>
+      )}
 
       <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] mt-6 overflow-hidden">
         <div className="px-5 py-4 text-sm font-semibold border-b" style={{ color: COLORS.ink, borderColor: COLORS.line }}>
@@ -206,7 +211,7 @@ export default function AvancesClient({ vehicles }) {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                  {["Date", "Type", "Montant", "Note", ""].map((h) => (
+                  {["Date", "Type", "Montant", "Note", ...(isAdmin ? [""] : [])].map((h) => (
                     <th key={h} className="text-left px-5 py-2.5 font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
                   ))}
                 </tr>
@@ -230,9 +235,11 @@ export default function AvancesClient({ vehicles }) {
                     </td>
                     <td className="px-5 py-2 font-mono font-semibold">{fmt(r.montant)} F</td>
                     <td className="px-5 py-2 text-[var(--text-slate)]">{r.note}</td>
-                    <td className="px-5 py-2">
-                      <button onClick={() => onDelete(r.id)} className="text-[var(--text-slate-light)] hover:text-[var(--red)]"><Trash2 size={14} /></button>
-                    </td>
+                    {isAdmin && (
+                      <td className="px-5 py-2">
+                        <button onClick={() => onDelete(r.id)} className="text-[var(--text-slate-light)] hover:text-[var(--red)]"><Trash2 size={14} /></button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

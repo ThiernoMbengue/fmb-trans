@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 
 const PROTECTED_PATHS = ["/saisie", "/vehicules", "/avances", "/rapports"];
+const PUBLIC_PATHS = ["/login"];
 
 export async function middleware(request) {
   let response = NextResponse.next({ request: { headers: request.headers } });
@@ -28,14 +29,15 @@ export async function middleware(request) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isProtected = PROTECTED_PATHS.some((p) =>
-    request.nextUrl.pathname.startsWith(p)
-  );
+  const pathname = request.nextUrl.pathname;
+  const isProtected =
+    !PUBLIC_PATHS.includes(pathname) &&
+    (pathname === "/" || PROTECTED_PATHS.some((p) => pathname.startsWith(p)));
 
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("next", request.nextUrl.pathname);
+    url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
 
@@ -43,5 +45,5 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: ["/saisie/:path*", "/vehicules/:path*", "/avances/:path*", "/rapports/:path*"],
+  matcher: ["/", "/saisie/:path*", "/vehicules/:path*", "/avances/:path*", "/rapports/:path*"],
 };

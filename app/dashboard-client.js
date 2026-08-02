@@ -199,7 +199,7 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-export default function DashboardClient({ vehicles }) {
+export default function DashboardClient({ vehicles, role }) {
   const supabase = createClient();
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
   const [entries, setEntries] = useState([]);
@@ -304,7 +304,9 @@ export default function DashboardClient({ vehicles }) {
   if (!vehicles.length) {
     return (
       <main className="px-6 md:px-10 py-8 max-w-6xl mx-auto text-sm text-[var(--text-slate-light)]">
-        Aucun véhicule enregistré pour le moment.
+        {role === "admin"
+          ? "Aucun véhicule enregistré pour le moment."
+          : "Aucun véhicule ne vous a été attribué pour le moment. Contactez le gestionnaire."}
       </main>
     );
   }
@@ -320,13 +322,19 @@ export default function DashboardClient({ vehicles }) {
               <span className="status-dot h-2 w-2 rounded-full bg-[var(--green)] text-[var(--green)]" />
               Pilotage en temps réel
             </div>
-            <h1 className="font-display mt-4 text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text-ink)]">Tableau de bord de flotte</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-slate)]">Suivez les recettes, dépenses, marges et versements avec une lecture claire par véhicule et par période.</p>
+            <h1 className="font-display mt-4 text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text-ink)]">
+              {role === "admin" ? "Tableau de bord de flotte" : "Mon tableau de bord"}
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-slate)]">
+              {role === "admin"
+                ? "Suivez les recettes, dépenses, marges et versements avec une lecture claire par véhicule et par période."
+                : "Suivez les recettes, dépenses et versements de vos véhicules avec une lecture claire par période."}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs text-[var(--text-slate)] sm:min-w-64">
             <div className="rounded-2xl bg-[var(--bg-page)] p-3">
               <div className="font-figures text-lg font-semibold text-[var(--text-ink)]">{vehicles.length}</div>
-              <div>Véhicules suivis</div>
+              <div>{role === "admin" ? "Véhicules suivis" : "Vos véhicules"}</div>
             </div>
             <div className="rounded-2xl bg-[var(--bg-page)] p-3">
               <div className="font-figures text-lg font-semibold text-[var(--text-ink)]">{range.start}</div>
@@ -526,7 +534,9 @@ export default function DashboardClient({ vehicles }) {
       )}
 
       <div className="text-xs text-[var(--text-slate-light)] mt-8 pb-10">
-        Consultation publique — les données affichées sont partagées entre tous les visiteurs du site.
+        {role === "admin"
+          ? "Accès gestionnaire — visibilité sur l'ensemble de la flotte."
+          : "Accès propriétaire — visibilité limitée à vos véhicules."}
       </div>
     </main>
   );
