@@ -1,8 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/supabase/role";
-import DashboardClient from "./dashboard-client";
+import AvancesClient from "./avances-client";
 
-export default async function HomePage() {
+export default async function AvancesPage() {
   const supabase = createClient();
   const { role } = await getRole(supabase);
   const { data: vehicles } = await supabase
@@ -10,5 +10,5 @@ export default async function HomePage() {
     .select("*")
     .order("created_at", { ascending: true });
 
-  return <DashboardClient vehicles={vehicles || []} role={role} />;
+  return <AvancesClient vehicles={vehicles || []} role={role} />;
 }
