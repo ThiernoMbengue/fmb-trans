@@ -8,6 +8,7 @@ import {
 import {
   Banknote, TrendingUp, CalendarClock, Percent, Wallet, Info, Bus,
   PiggyBank, FileSpreadsheet, FileText, SlidersHorizontal, CalendarRange, Calculator,
+  CalendarDays,
 } from "lucide-react";
 import { generateVersementsPDF } from "@/lib/pdf/report";
 
@@ -29,6 +30,11 @@ const DEFAUTS = {
   kmParMois: 3000,
   provisionMensuelle: 50000,
   prixEstimation: 5000000,
+  // Régime réel : le véhicule roule tous les jours sauf le dimanche
+  joursTravaillesParSemaine: 6,
+  // Référence issue de l'exploitation : un véhicule climatisé dégage au
+  // minimum ce montant net par jour travaillé, en Yango comme en location
+  netMinParJour: 15000,
 };
 
 const fmt = (n) => {
@@ -124,6 +130,8 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
   const [kmParMois, setKmParMois] = useState(DEFAUTS.kmParMois);
   const [provisionMensuelle, setProvisionMensuelle] = useState(DEFAUTS.provisionMensuelle);
   const [prixEstimation, setPrixEstimation] = useState(DEFAUTS.prixEstimation);
+  const [joursParSemaine, setJoursParSemaine] = useState(DEFAUTS.joursTravaillesParSemaine);
+  const [netMinParJour, setNetMinParJour] = useState(DEFAUTS.netMinParJour);
 
   const base = useMemo(() => {
     const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
@@ -183,6 +191,17 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
     };
   }, [assuranceMensuelle, coutEntretien, kmParEntretien, kmParMois]);
 
+  // Régime d'exploitation : le véhicule ne roule pas 7j/7, les jours de repos
+  // ne doivent donc pas être comptés comme des jours d'inactivité subie.
+  const regime = useMemo(() => {
+    const ratio = Math.min(1, Math.max(0, joursParSemaine / 7));
+    const joursTravaillesParMois = ratio * DAYS_PER_MONTH;
+    const joursOuvresTheoriques = Math.round(base.joursObserves * ratio);
+    const tauxRealisation =
+      joursOuvresTheoriques > 0 ? (base.joursActifs / joursOuvresTheoriques) * 100 : 0;
+    return { ratio, joursTravaillesParMois, joursOuvresTheoriques, tauxRealisation };
+  }, [base, joursParSemaine]);
+
   const calc = useMemo(() => {
     const chargesSurPeriode = charges.chargesMensuelles * base.moisObserves;
     const netApresCharges = base.netVerse - depensesImprevues - chargesSurPeriode;
@@ -204,9 +223,18 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
       dateRentabilite = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     }
 
+    // Deux lectures de la provision : soit elle n'est pas consommée et revient
+    // à l'investisseur, soit elle part intégralement en réparations.
+    const moisRentabiliteProvisionConsommee =
+      netDistribuableMensuel > 0 ? prixAchat / netDistribuableMensuel : null;
+
+    // Net moyen effectivement réalisé par jour travaillé (hors jours de repos)
+    const netParJourTravaille = base.joursActifs > 0 ? base.netVerse / base.joursActifs : 0;
+
     return {
       chargesSurPeriode, netApresCharges, netMensuelMoyen, netJournalierMoyen,
-      provisionConstituee, netDistribuableMensuel,
+      provisionConstituee, netDistribuableMensuel, moisRentabiliteProvisionConsommee,
+      netParJourTravaille,
       pctRembourse, rendementAnnuel, moisRentabilite, moisRestants, dateRentabilite,
     };
   }, [base, charges, depensesImprevues, prixAchat, provisionMensuelle]);
@@ -283,13 +311,25 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
     };
   }, [flotte, charges, prixEstimation]);
 
+  // Référence métier : net minimum constaté par jour travaillé, appliqué au régime réel
+  const reference = useMemo(() => {
+    const brutMensuel = netMinParJour * regime.joursTravaillesParMois;
+    const netMensuel = brutMensuel - charges.chargesMensuelles;
+    return {
+      brutMensuel,
+      netMensuel,
+      moisRentabilite: netMensuel > 0 ? prixAchat / netMensuel : null,
+      rendement: prixAchat > 0 ? ((netMensuel * 12) / prixAchat) * 100 : 0,
+    };
+  }, [netMinParJour, regime, charges, prixAchat]);
+
   const scenarios = useMemo(() => {
     const defs = [
       { id: "prudent", label: "Prudent", coef: 0.75, desc: "−25 % vs observé", color: COLORS.amber },
       { id: "reel", label: "Observé", coef: 1, desc: "rythme actuel", color: COLORS.fleet },
       { id: "optimiste", label: "Optimiste", coef: 1.25, desc: "+25 % vs observé", color: COLORS.green },
     ];
-    return defs.map((d) => {
+    const base = defs.map((d) => {
       const mensuel = calc.netMensuelMoyen * d.coef;
       const mois = mensuel > 0 ? prixAchat / mensuel : null;
       return {
@@ -300,7 +340,21 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
         rendement: prixAchat > 0 ? ((mensuel * 12) / prixAchat) * 100 : 0,
       };
     });
-  }, [calc, prixAchat]);
+
+    return [
+      ...base,
+      {
+        id: "reference",
+        label: "Référence métier",
+        desc: `${fmt(netMinParJour)} F net / jour travaillé`,
+        color: COLORS.purple,
+        mensuel: reference.netMensuel,
+        annuel: reference.netMensuel * 12,
+        mois: reference.moisRentabilite,
+        rendement: reference.rendement,
+      },
+    ];
+  }, [calc, prixAchat, reference, netMinParJour]);
 
   const exportCSV = () => {
     const entete = [
@@ -336,7 +390,8 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
   };
 
   const pctBar = Math.max(0, Math.min(100, calc.pctRembourse));
-  const tauxActivite = base.joursObserves > 0 ? (base.joursActifs / base.joursObserves) * 100 : 0;
+  const prixEstimationMoisReference =
+    reference.netMensuel > 0 ? prixEstimation / reference.netMensuel : null;
 
   return (
     <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto animate-fade-up">
@@ -449,8 +504,8 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
         <StatCard
           icon={Wallet}
           label="Jours travaillés"
-          value={`${base.joursActifs} / ${base.joursObserves}`}
-          caption={`taux d'activité ${tauxActivite.toFixed(0)} %`}
+          value={`${base.joursActifs} / ${regime.joursOuvresTheoriques}`}
+          caption={`régime ${joursParSemaine} j/7 · ${regime.tauxRealisation.toFixed(0)} % des jours ouvrés`}
           accent={COLORS.slate}
         />
       </div>
@@ -532,7 +587,7 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
                   <td className="px-5 py-2">
                     {b.joursTravailles}
                     <span className="text-[11px] font-sans text-[var(--text-slate-light)] ml-1.5">
-                      / {b.joursSaisis} jours saisis
+                      / {Math.round(b.joursSaisis * regime.ratio)} ouvrés
                     </span>
                   </td>
                   <td className="px-5 py-2">{fmt(b.recette)}</td>
@@ -592,6 +647,97 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Régime d'exploitation & référence métier */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        <div className="surface-card rounded-2xl p-5">
+          <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: COLORS.ink }}>
+            <CalendarDays size={15} color={COLORS.fleet} /> Régime d&apos;exploitation
+          </div>
+          <div className="text-xs text-[var(--text-slate)] mt-2 mb-4 leading-relaxed">
+            Le véhicule roule <strong>{joursParSemaine} jours sur 7</strong> — il ne se repose que
+            le dimanche. Les jours de repos ne sont donc pas des jours d&apos;inactivité subie : le
+            taux ci-dessous compare les jours réellement travaillés aux seuls jours ouvrés.
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <ParamField label="Jours travaillés / semaine" value={joursParSemaine} onChange={(v) => setJoursParSemaine(Math.min(7, v))} step={1} suffix="j/7" />
+            <ParamField label="Net minimum par jour travaillé" value={netMinParJour} onChange={setNetMinParJour} step={1000} suffix="F" />
+          </div>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="rounded-xl bg-[var(--bg-page)] p-3">
+              <div className="text-[11px] text-[var(--text-slate)]">Jours ouvrés / mois</div>
+              <div className="font-figures text-base font-semibold mt-0.5" style={{ color: COLORS.ink }}>
+                {regime.joursTravaillesParMois.toFixed(1)} jours
+              </div>
+            </div>
+            <div className="rounded-xl bg-[var(--bg-page)] p-3">
+              <div className="text-[11px] text-[var(--text-slate)]">Net réalisé / jour travaillé</div>
+              <div
+                className="font-figures text-base font-semibold mt-0.5"
+                style={{ color: calc.netParJourTravaille >= netMinParJour ? COLORS.green : COLORS.amber }}
+              >
+                {fmt(calc.netParJourTravaille)} F
+              </div>
+              <div className="text-[10px] text-[var(--text-slate-light)] mt-1">
+                référence : {fmt(netMinParJour)} F
+              </div>
+            </div>
+          </div>
+          <div className="text-[11px] text-[var(--text-slate)] mt-3 leading-relaxed">
+            D&apos;après l&apos;expérience accumulée sur la flotte, un véhicule <strong>climatisé</strong>{" "}
+            dégage au minimum <strong>{fmt(netMinParJour)} F net par jour travaillé</strong>, que ce
+            soit en Yango ou en location. Soit {fmt(reference.brutMensuel)} F par mois avant charges.
+          </div>
+        </div>
+
+        <div className="surface-card rounded-2xl p-5">
+          <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: COLORS.ink }}>
+            <PiggyBank size={15} color={COLORS.purple} /> Sort de la mise de côté
+          </div>
+          <div className="text-xs text-[var(--text-slate)] mt-2 mb-4 leading-relaxed">
+            Les {fmt(provisionMensuelle)} F mis de côté chaque mois constituent une réserve pour les
+            réparations. Deux issues possibles, et donc deux durées de rentabilisation :
+          </div>
+          <div className="flex flex-col gap-3">
+            <div className="rounded-xl p-3.5" style={{ backgroundColor: `color-mix(in srgb, ${COLORS.green} 8%, transparent)` }}>
+              <div className="text-xs font-semibold" style={{ color: COLORS.green }}>
+                Réserve non consommée
+              </div>
+              <div className="text-[11px] text-[var(--text-slate)] mt-1 leading-relaxed">
+                Aucune grosse réparation : la réserve reste acquise à l&apos;investisseur et s&apos;ajoute
+                à son gain. Elle représente déjà {fmt(calc.provisionConstituee)} F.
+              </div>
+              <div className="font-figures text-lg font-semibold mt-2" style={{ color: COLORS.ink }}>
+                {calc.moisRentabilite != null ? `${calc.moisRentabilite.toFixed(1)} mois` : "—"}
+                <span className="text-[11px] font-sans font-normal text-[var(--text-slate-light)] ml-2">
+                  pour rentabiliser
+                </span>
+              </div>
+            </div>
+            <div className="rounded-xl p-3.5" style={{ backgroundColor: `color-mix(in srgb, ${COLORS.amber} 8%, transparent)` }}>
+              <div className="text-xs font-semibold" style={{ color: COLORS.amber }}>
+                Réserve entièrement consommée
+              </div>
+              <div className="text-[11px] text-[var(--text-slate)] mt-1 leading-relaxed">
+                Hypothèse prudente : la totalité de la mise de côté part en réparations. Seul le net
+                distribuable de {fmt(calc.netDistribuableMensuel)} F/mois rembourse le capital.
+              </div>
+              <div className="font-figures text-lg font-semibold mt-2" style={{ color: COLORS.ink }}>
+                {calc.moisRentabiliteProvisionConsommee != null
+                  ? `${calc.moisRentabiliteProvisionConsommee.toFixed(1)} mois`
+                  : "—"}
+                <span className="text-[11px] font-sans font-normal text-[var(--text-slate-light)] ml-2">
+                  pour rentabiliser
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="text-[11px] text-[var(--text-slate-light)] mt-3 leading-relaxed">
+            La réalité se situe généralement entre les deux : une partie de la réserve sert, le reste
+            demeure un actif de l&apos;investisseur.
+          </div>
         </div>
       </div>
 
@@ -666,6 +812,33 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
               <div className="text-[10px] text-[var(--text-slate-light)] mt-1">
                 sur {fmt(prixEstimation)} F investis
               </div>
+            </div>
+          </div>
+
+          <div
+            className="rounded-xl p-4 mt-3 border"
+            style={{
+              borderColor: `color-mix(in srgb, ${COLORS.purple} 30%, transparent)`,
+              backgroundColor: `color-mix(in srgb, ${COLORS.purple} 6%, transparent)`,
+            }}
+          >
+            <div className="text-xs font-semibold mb-1" style={{ color: COLORS.purple }}>
+              Sur la base de la référence métier ({fmt(netMinParJour)} F net / jour travaillé)
+            </div>
+            <div className="text-[11px] text-[var(--text-slate)] leading-relaxed">
+              Un véhicule climatisé exploité {joursParSemaine} j/7 dégage{" "}
+              <strong>{fmt(reference.netMensuel)} F net par mois</strong> après charges. Pour un
+              véhicule acheté {fmt(prixEstimation)} F, le capital serait remboursé en{" "}
+              <strong>
+                {prixEstimationMoisReference != null
+                  ? `${prixEstimationMoisReference.toFixed(1)} mois (${(prixEstimationMoisReference / 12).toFixed(1)} an)`
+                  : "—"}
+              </strong>
+              , soit un rendement de{" "}
+              <strong>
+                {prixEstimation > 0 ? ((reference.netMensuel * 12) / prixEstimation * 100).toFixed(1) : "0"} %
+              </strong>{" "}
+              par an.
             </div>
           </div>
 
@@ -809,9 +982,19 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
               Dépenses imprévues déjà constatées sur la période : <strong>{fmt(depensesImprevues)} F</strong>.
             </li>
             <li>
-              La mise de côté de {fmt(provisionMensuelle)} F/mois constitue une réserve : elle reste
-              acquise à l&apos;investisseur et sert à couvrir les réparations futures. Elle est donc
-              exclue du calcul de rentabilité, mais retirée du net distribuable.
+              Régime d&apos;exploitation : {joursParSemaine} jours travaillés sur 7 (repos le dimanche),
+              soit {regime.joursTravaillesParMois.toFixed(1)} jours ouvrés par mois. Les jours de repos
+              ne sont pas comptés comme de l&apos;inactivité.
+            </li>
+            <li>
+              La référence de {fmt(netMinParJour)} F net par jour travaillé provient de
+              l&apos;expérience d&apos;exploitation sur véhicule climatisé (Yango et location). C&apos;est
+              un minimum constaté, pas une garantie contractuelle.
+            </li>
+            <li>
+              La mise de côté de {fmt(provisionMensuelle)} F/mois constitue une réserve. Les deux
+              durées de rentabilisation présentées encadrent le résultat selon qu&apos;elle est
+              conservée ou entièrement consommée en réparations.
             </li>
             <li>
               L&apos;estimation d&apos;un nouvel investissement s&apos;appuie sur la moyenne de tous les
