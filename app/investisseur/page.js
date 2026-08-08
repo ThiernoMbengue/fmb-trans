@@ -91,9 +91,10 @@ export default async function InvestisseurPage({ searchParams }) {
     vehicles.find((v) => (v.marque || "").toUpperCase().includes("QM3")) ||
     vehicles[0];
 
-  const [entriesRes, avancesRes] = await Promise.all([
+  const [entriesRes, avancesRes, flotteRes] = await Promise.all([
     admin.from("entries").select("*").eq("vehicle_id", vehicle.id).order("date", { ascending: true }),
     admin.from("avances").select("*").eq("vehicle_id", vehicle.id),
+    admin.from("entries").select("vehicle_id,date,recette,net").order("date", { ascending: true }),
   ]);
 
   const entries = entriesRes.data || [];
@@ -105,13 +106,45 @@ export default async function InvestisseurPage({ searchParams }) {
     return <Message>Aucune donnée d&apos;exploitation disponible pour ce véhicule.</Message>;
   }
 
+  // Synthèse par véhicule sur toute la flotte : sert de base à l'estimation
+  // de rentabilité d'un nouvel investissement.
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+  const toutesSaisies = flotteRes.data || [];
+  const flotte = vehicles
+    .map((v) => {
+      const rows = toutesSaisies.filter((e) => e.vehicle_id === v.id);
+      if (!rows.length) return null;
+
+      const premiereDate = rows[0].date;
+      const derniereDate = rows[rows.length - 1].date;
+      const finPeriode = aujourdhui > derniereDate ? aujourdhui : derniereDate;
+      const jours =
+        Math.round(
+          (new Date(finPeriode + "T00:00:00") - new Date(premiereDate + "T00:00:00")) / 86400000
+        ) + 1;
+
+      return {
+        id: v.id,
+        marque: v.marque,
+        immatriculation: v.immatriculation,
+        premiereDate,
+        derniereDate,
+        jours,
+        nbSaisies: rows.length,
+        joursTravailles: rows.filter((e) => Number(e.recette) > 0).length,
+        net: rows.reduce((s, e) => s + (Number(e.net) || 0), 0),
+      };
+    })
+    .filter(Boolean);
+
   return (
     <InvestisseurClient
       vehicle={vehicle}
       entries={entries}
       depensesImprevues={depensesImprevues}
       prixAchat={PRIX_ACHAT}
-      aujourdhui={new Date().toISOString().slice(0, 10)}
+      aujourdhui={aujourdhui}
+      flotte={flotte}
     />
   );
 }

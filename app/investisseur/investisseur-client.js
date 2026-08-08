@@ -6,8 +6,8 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import {
-  Banknote, TrendingUp, CalendarClock, Percent, Wallet, Target, Info, Bus,
-  PiggyBank, FileSpreadsheet, FileText, SlidersHorizontal,
+  Banknote, TrendingUp, CalendarClock, Percent, Wallet, Info, Bus,
+  PiggyBank, FileSpreadsheet, FileText, SlidersHorizontal, CalendarRange, Calculator,
 } from "lucide-react";
 import { generateVersementsPDF } from "@/lib/pdf/report";
 
@@ -28,6 +28,7 @@ const DEFAUTS = {
   kmParEntretien: 5000,
   kmParMois: 3000,
   provisionMensuelle: 50000,
+  prixEstimation: 5000000,
 };
 
 const fmt = (n) => {
@@ -116,12 +117,13 @@ function ParamField({ label, value, onChange, step = 1000, suffix }) {
   );
 }
 
-export default function InvestisseurClient({ vehicle, entries, depensesImprevues, prixAchat, aujourdhui }) {
+export default function InvestisseurClient({ vehicle, entries, depensesImprevues, prixAchat, aujourdhui, flotte }) {
   const [assuranceMensuelle, setAssuranceMensuelle] = useState(DEFAUTS.assuranceMensuelle);
   const [coutEntretien, setCoutEntretien] = useState(DEFAUTS.coutEntretien);
   const [kmParEntretien, setKmParEntretien] = useState(DEFAUTS.kmParEntretien);
   const [kmParMois, setKmParMois] = useState(DEFAUTS.kmParMois);
   const [provisionMensuelle, setProvisionMensuelle] = useState(DEFAUTS.provisionMensuelle);
+  const [prixEstimation, setPrixEstimation] = useState(DEFAUTS.prixEstimation);
 
   const base = useMemo(() => {
     const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
@@ -158,9 +160,14 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
     }
     const mois = [...parMois.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
+    // Saisies portant sur des dates à venir : locations réservées et convenues à l'avance
+    const saisiesFutures = sorted.filter((e) => e.date > aujourdhui);
+    const montantFutur = saisiesFutures.reduce((s, e) => s + (Number(e.net) || 0), 0);
+
     return {
       sorted, premiereDate, derniereSaisie, finPeriode, joursObserves, moisObserves,
       recetteBrute, depensesExploitation, netVerse, joursActifs, mois,
+      saisiesFutures, montantFutur,
     };
   }, [entries, aujourdhui]);
 
@@ -248,6 +255,33 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
       })),
     [base]
   );
+
+  // Estimation d'un nouvel investissement, basée sur l'ensemble des véhicules de la plateforme
+  const estimation = useMemo(() => {
+    const parVehicule = (flotte || []).map((v) => {
+      const mois = v.jours / DAYS_PER_MONTH;
+      return { ...v, mois, netMensuel: mois > 0 ? v.net / mois : 0 };
+    });
+
+    const nbVehicules = parVehicule.length;
+    const netMensuelBrut =
+      nbVehicules > 0 ? parVehicule.reduce((s, v) => s + v.netMensuel, 0) / nbVehicules : 0;
+    const netMensuelMoyen = netMensuelBrut - charges.chargesMensuelles;
+
+    const moisRentabilite = netMensuelMoyen > 0 ? prixEstimation / netMensuelMoyen : null;
+    const rendementAnnuel = prixEstimation > 0 ? ((netMensuelMoyen * 12) / prixEstimation) * 100 : 0;
+
+    return {
+      parVehicule,
+      nbVehicules,
+      netMensuelBrut,
+      netMensuelMoyen,
+      moisRentabilite,
+      rendementAnnuel,
+      joursCumules: parVehicule.reduce((s, v) => s + v.jours, 0),
+      saisiesCumulees: parVehicule.reduce((s, v) => s + v.nbSaisies, 0),
+    };
+  }, [flotte, charges, prixEstimation]);
 
   const scenarios = useMemo(() => {
     const defs = [
@@ -350,6 +384,30 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
           </div>
         </div>
       </section>
+
+      {/* Saisies portant sur des dates à venir */}
+      {base.saisiesFutures.length > 0 && (
+        <div
+          className="flex items-start gap-3 rounded-2xl px-4 py-3.5 mb-5 border"
+          style={{
+            borderColor: `color-mix(in srgb, ${COLORS.fleet} 35%, transparent)`,
+            backgroundColor: `color-mix(in srgb, ${COLORS.fleet} 7%, transparent)`,
+          }}
+        >
+          <CalendarRange size={17} color={COLORS.fleet} className="mt-0.5 shrink-0" />
+          <div className="text-xs leading-relaxed text-[var(--text-slate)]">
+            <span className="font-semibold text-[var(--text-ink)]">
+              Certaines saisies portent sur des dates postérieures à aujourd&apos;hui
+            </span>{" "}
+            — {base.saisiesFutures.length} jour(s) jusqu&apos;au {fmtDateLong(base.derniereSaisie)},
+            pour un montant de {fmt(base.montantFutur)} F.
+            <br />
+            Il ne s&apos;agit pas d&apos;une projection : ce sont des <strong>périodes de location
+            réservées et convenues à l&apos;avance</strong>, dont le montant est fixé au contrat dès
+            la signature. Le revenu est donc connu avant même que la période soit écoulée.
+          </div>
+        </div>
+      )}
 
       {/* Indicateurs clés */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
@@ -537,6 +595,118 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
         </div>
       </div>
 
+      {/* Estimation pour un nouvel investissement */}
+      {estimation.nbVehicules > 0 && (
+        <div className="surface-card rounded-2xl p-5 mt-4">
+          <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: COLORS.ink }}>
+            <Calculator size={15} color={COLORS.purple} /> Estimation pour un nouvel investissement
+          </div>
+          <div className="text-xs text-[var(--text-slate)] mt-2 mb-4 leading-relaxed max-w-3xl">
+            Cette estimation n&apos;est pas basée sur un seul véhicule : elle s&apos;appuie sur{" "}
+            <strong>l&apos;ensemble des {estimation.nbVehicules} véhicule(s) exploité(s) sur la
+            plateforme</strong>, soit {estimation.saisiesCumulees} journées d&apos;exploitation
+            réellement saisies et {estimation.joursCumules} jours de présence cumulés en flotte.
+            La durée de rentabilisation est ensuite recalculée en fonction du prix d&apos;achat
+            du véhicule que vous envisagez.
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3 mb-5">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-medium text-[var(--text-slate)]">
+                Prix d&apos;achat du véhicule envisagé
+              </span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={0}
+                  step={250000}
+                  value={prixEstimation}
+                  onChange={(e) => setPrixEstimation(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-44 text-sm font-figures bg-[var(--bg-page)] border border-[var(--border-line)] rounded-lg px-3 py-2"
+                />
+                <span className="text-[11px] text-[var(--text-slate-light)]">FCFA</span>
+              </div>
+            </label>
+            {prixEstimation !== DEFAUTS.prixEstimation && (
+              <button
+                onClick={() => setPrixEstimation(DEFAUTS.prixEstimation)}
+                className="text-xs text-[var(--text-slate-light)] underline underline-offset-2 pb-2.5"
+              >
+                Revenir à {fmt(DEFAUTS.prixEstimation)} F
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl bg-[var(--bg-page)] p-3.5">
+              <div className="text-[11px] text-[var(--text-slate)]">Net mensuel moyen par véhicule</div>
+              <div className="font-figures text-lg font-semibold mt-0.5" style={{ color: COLORS.ink }}>
+                {fmt(estimation.netMensuelMoyen)} F
+              </div>
+              <div className="text-[10px] text-[var(--text-slate-light)] mt-1">
+                {fmt(estimation.netMensuelBrut)} F avant charges
+              </div>
+            </div>
+            <div className="rounded-xl bg-[var(--bg-page)] p-3.5">
+              <div className="text-[11px] text-[var(--text-slate)]">Durée de rentabilisation estimée</div>
+              <div className="font-figures text-lg font-semibold mt-0.5" style={{ color: COLORS.amber }}>
+                {estimation.moisRentabilite != null ? `${estimation.moisRentabilite.toFixed(1)} mois` : "—"}
+              </div>
+              <div className="text-[10px] text-[var(--text-slate-light)] mt-1">
+                {estimation.moisRentabilite != null
+                  ? `soit ${(estimation.moisRentabilite / 12).toFixed(1)} an(s)`
+                  : "revenu net insuffisant"}
+              </div>
+            </div>
+            <div className="rounded-xl bg-[var(--bg-page)] p-3.5">
+              <div className="text-[11px] text-[var(--text-slate)]">Rendement annuel estimé</div>
+              <div className="font-figures text-lg font-semibold mt-0.5" style={{ color: COLORS.green }}>
+                {estimation.rendementAnnuel.toFixed(1)} %
+              </div>
+              <div className="text-[10px] text-[var(--text-slate-light)] mt-1">
+                sur {fmt(prixEstimation)} F investis
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto mt-5 -mx-5">
+            <table className="w-full text-sm font-figures">
+              <thead>
+                <tr style={{ backgroundColor: "var(--bg-page)" }}>
+                  {["Véhicule", "Jours en flotte", "Jours travaillés", "Net cumulé", "Net / mois"].map((h) => (
+                    <th key={h} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {estimation.parVehicule.map((v) => (
+                  <tr key={v.id} className="border-t" style={{ borderColor: COLORS.line }}>
+                    <td className="px-5 py-2 font-sans">
+                      {v.marque}
+                      <span className="text-[11px] text-[var(--text-slate-light)] ml-1.5">{v.immatriculation}</span>
+                    </td>
+                    <td className="px-5 py-2">{v.jours}</td>
+                    <td className="px-5 py-2">{v.joursTravailles}</td>
+                    <td className="px-5 py-2">{fmt(v.net)} F</td>
+                    <td className="px-5 py-2 font-semibold">{fmt(v.netMensuel)} F</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {estimation.nbVehicules === 1 && (
+            <div className="text-[11px] text-[var(--text-slate-light)] mt-3 leading-relaxed">
+              Un seul véhicule est actuellement exploité sur la plateforme : l&apos;estimation repose
+              donc entièrement sur son historique. Elle gagnera en fiabilité à mesure que d&apos;autres
+              véhicules alimenteront la base.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Paramètres de charges */}
       <div className="surface-card rounded-2xl p-5 mt-4">
         <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: COLORS.ink }}>
@@ -643,6 +813,17 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
               acquise à l&apos;investisseur et sert à couvrir les réparations futures. Elle est donc
               exclue du calcul de rentabilité, mais retirée du net distribuable.
             </li>
+            <li>
+              L&apos;estimation d&apos;un nouvel investissement s&apos;appuie sur la moyenne de tous les
+              véhicules de la plateforme ({estimation.nbVehicules} véhicule(s)), et non sur ce seul
+              véhicule.
+            </li>
+            {base.saisiesFutures.length > 0 && (
+              <li>
+                {base.saisiesFutures.length} jour(s) saisi(s) portent sur des dates à venir : ce sont
+                des locations déjà contractées, au montant convenu à l&apos;avance.
+              </li>
+            )}
             <li>
               Ne sont pris en compte ni la valeur de revente du véhicule, ni sa dépréciation, ni l&apos;inflation.
             </li>
