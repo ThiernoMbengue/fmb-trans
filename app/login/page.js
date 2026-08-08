@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { login } from "./actions";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, TrendingUp, ChevronRight } from "lucide-react";
 
 const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)" };
 
@@ -51,6 +52,27 @@ export default function LoginPage({ searchParams }) {
             Se connecter
           </button>
         </form>
+
+        <div className="road-divider my-5" style={{ color: "var(--amber)" }} />
+
+        <Link
+          href="/investisseur"
+          className="flex items-center gap-3 rounded-xl border border-[var(--border-line)] bg-[var(--bg-page)] px-3.5 py-3 hover:border-[var(--fleet-bright)]"
+        >
+          <div
+            className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+            style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 16%, transparent)" }}
+          >
+            <TrendingUp size={16} color="var(--fleet-bright)" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>Espace investisseur</div>
+            <div className="text-[11px] text-[var(--text-slate-light)] leading-snug">
+              Consulter la performance d&apos;un véhicule — accès par mot de passe
+            </div>
+          </div>
+          <ChevronRight size={16} className="text-[var(--text-slate-light)] shrink-0" />
+        </Link>
       </div>
     </main>
   );
