@@ -13,5 +13,13 @@ export default async function ComptesPage() {
     .select("*")
     .order("created_at", { ascending: true });
 
-  return <ComptesClient profiles={profiles || []} currentUserId={user.id} />;
+  const serviceKeyConfigured = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  return (
+    <ComptesClient
+      profiles={profiles || []}
+      currentUserId={user.id}
+      serviceKeyConfigured={serviceKeyConfigured}
+    />
+  );
 }
