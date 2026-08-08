@@ -7,7 +7,9 @@ import {
 } from "recharts";
 import {
   Banknote, TrendingUp, CalendarClock, Percent, Wallet, Target, Info, Bus,
+  PiggyBank, FileSpreadsheet, FileText, SlidersHorizontal,
 } from "lucide-react";
+import { generateVersementsPDF } from "@/lib/pdf/report";
 
 const COLORS = {
   ink: "var(--text-ink)", fleet: "var(--fleet-bright)", amber: "var(--amber)",
@@ -18,6 +20,15 @@ const COLORS = {
 const MONTHS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Jun", "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"];
 const MONTHS_LONG = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 const DAYS_PER_MONTH = 30.44;
+
+// Valeurs par défaut communiquées par l'exploitant
+const DEFAUTS = {
+  assuranceMensuelle: 7000,
+  coutEntretien: 70000,
+  kmParEntretien: 5000,
+  kmParMois: 3000,
+  provisionMensuelle: 50000,
+};
 
 const fmt = (n) => {
   const num = Math.round(Number(n) || 0);
@@ -86,17 +97,43 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
-export default function InvestisseurClient({ vehicle, entries, depensesImprevues, prixAchat }) {
-  const [chargesAnnuelles, setChargesAnnuelles] = useState(0);
+function ParamField({ label, value, onChange, step = 1000, suffix }) {
+  return (
+    <label className="flex flex-col gap-1.5 min-w-0">
+      <span className="text-[11px] font-medium text-[var(--text-slate)] leading-snug">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          min={0}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
+          className="w-full text-sm font-figures bg-[var(--bg-page)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5 min-w-0"
+        />
+        <span className="text-[11px] text-[var(--text-slate-light)] shrink-0">{suffix}</span>
+      </div>
+    </label>
+  );
+}
+
+export default function InvestisseurClient({ vehicle, entries, depensesImprevues, prixAchat, aujourdhui }) {
+  const [assuranceMensuelle, setAssuranceMensuelle] = useState(DEFAUTS.assuranceMensuelle);
+  const [coutEntretien, setCoutEntretien] = useState(DEFAUTS.coutEntretien);
+  const [kmParEntretien, setKmParEntretien] = useState(DEFAUTS.kmParEntretien);
+  const [kmParMois, setKmParMois] = useState(DEFAUTS.kmParMois);
+  const [provisionMensuelle, setProvisionMensuelle] = useState(DEFAUTS.provisionMensuelle);
 
   const base = useMemo(() => {
     const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
     const premiereDate = sorted[0].date;
-    const derniereDate = sorted[sorted.length - 1].date;
+    const derniereSaisie = sorted[sorted.length - 1].date;
+    // La période court du premier jour saisi jusqu'à aujourd'hui : les jours sans
+    // saisie comptent aussi, sinon les moyennes seraient artificiellement gonflées.
+    const finPeriode = aujourdhui > derniereSaisie ? aujourdhui : derniereSaisie;
 
     const joursObserves =
       Math.round(
-        (new Date(derniereDate + "T00:00:00") - new Date(premiereDate + "T00:00:00")) / 86400000
+        (new Date(finPeriode + "T00:00:00") - new Date(premiereDate + "T00:00:00")) / 86400000
       ) + 1;
     const moisObserves = joursObserves / DAYS_PER_MONTH;
 
@@ -111,52 +148,69 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
     const parMois = new Map();
     for (const e of sorted) {
       const key = monthKeyOf(e.date);
-      if (!parMois.has(key)) parMois.set(key, { net: 0, recette: 0, depenses: 0 });
+      if (!parMois.has(key)) parMois.set(key, { net: 0, recette: 0, depenses: 0, joursTravailles: 0, joursSaisis: 0 });
       const b = parMois.get(key);
       b.net += Number(e.net) || 0;
       b.recette += Number(e.recette) || 0;
       b.depenses += (Number(e.gazoil) || 0) + (Number(e.autres) || 0);
+      b.joursSaisis += 1;
+      if (Number(e.recette) > 0) b.joursTravailles += 1;
     }
     const mois = [...parMois.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
     return {
-      sorted, premiereDate, derniereDate, joursObserves, moisObserves,
+      sorted, premiereDate, derniereSaisie, finPeriode, joursObserves, moisObserves,
       recetteBrute, depensesExploitation, netVerse, joursActifs, mois,
     };
-  }, [entries]);
+  }, [entries, aujourdhui]);
+
+  const charges = useMemo(() => {
+    const entretiensParMois = kmParEntretien > 0 ? kmParMois / kmParEntretien : 0;
+    const entretienMensuel = entretiensParMois * coutEntretien;
+    const chargesMensuelles = assuranceMensuelle + entretienMensuel;
+    return {
+      entretiensParMois,
+      entretienMensuel,
+      chargesMensuelles,
+      chargesAnnuelles: chargesMensuelles * 12,
+    };
+  }, [assuranceMensuelle, coutEntretien, kmParEntretien, kmParMois]);
 
   const calc = useMemo(() => {
-    const chargesSurPeriode = (chargesAnnuelles / 12) * base.moisObserves;
-    const netReel = base.netVerse - depensesImprevues - chargesSurPeriode;
-    const netMensuelMoyen = base.moisObserves > 0 ? netReel / base.moisObserves : 0;
-    const netJournalierMoyen = base.joursObserves > 0 ? netReel / base.joursObserves : 0;
+    const chargesSurPeriode = charges.chargesMensuelles * base.moisObserves;
+    const netApresCharges = base.netVerse - depensesImprevues - chargesSurPeriode;
+    const netMensuelMoyen = base.moisObserves > 0 ? netApresCharges / base.moisObserves : 0;
+    const netJournalierMoyen = base.joursObserves > 0 ? netApresCharges / base.joursObserves : 0;
 
-    const pctRembourse = prixAchat > 0 ? (netReel / prixAchat) * 100 : 0;
+    const provisionConstituee = provisionMensuelle * base.moisObserves;
+    const netDistribuableMensuel = netMensuelMoyen - provisionMensuelle;
+
+    const pctRembourse = prixAchat > 0 ? (netApresCharges / prixAchat) * 100 : 0;
     const rendementAnnuel = prixAchat > 0 ? ((netMensuelMoyen * 12) / prixAchat) * 100 : 0;
     const moisRentabilite = netMensuelMoyen > 0 ? prixAchat / netMensuelMoyen : null;
-    const moisRestants = netMensuelMoyen > 0 ? Math.max(0, (prixAchat - netReel) / netMensuelMoyen) : null;
+    const moisRestants = netMensuelMoyen > 0 ? Math.max(0, (prixAchat - netApresCharges) / netMensuelMoyen) : null;
 
     let dateRentabilite = null;
     if (moisRestants != null) {
-      const d = new Date(base.derniereDate + "T00:00:00");
+      const d = new Date(base.finPeriode + "T00:00:00");
       d.setMonth(d.getMonth() + Math.ceil(moisRestants));
       dateRentabilite = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     }
 
     return {
-      chargesSurPeriode, netReel, netMensuelMoyen, netJournalierMoyen,
+      chargesSurPeriode, netApresCharges, netMensuelMoyen, netJournalierMoyen,
+      provisionConstituee, netDistribuableMensuel,
       pctRembourse, rendementAnnuel, moisRentabilite, moisRestants, dateRentabilite,
     };
-  }, [base, chargesAnnuelles, depensesImprevues, prixAchat]);
+  }, [base, charges, depensesImprevues, prixAchat, provisionMensuelle]);
 
   // Courbe : cumul réel observé, puis projection au rythme moyen jusqu'au remboursement
   const courbe = useMemo(() => {
-    const chargesMensuelles = chargesAnnuelles / 12;
     const depensesParMois = base.mois.length > 0 ? depensesImprevues / base.mois.length : 0;
 
     let cumul = 0;
     const points = base.mois.map(([key, b]) => {
-      cumul += b.net - depensesParMois - chargesMensuelles;
+      cumul += b.net - depensesParMois - charges.chargesMensuelles;
       return { label: fmtMonthLabel(key), reel: Math.round(cumul), projection: null };
     });
 
@@ -182,7 +236,7 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
     }
 
     return points;
-  }, [base, calc, chargesAnnuelles, depensesImprevues, prixAchat]);
+  }, [base, calc, charges, depensesImprevues, prixAchat]);
 
   const moisChart = useMemo(
     () =>
@@ -214,7 +268,41 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
     });
   }, [calc, prixAchat]);
 
+  const exportCSV = () => {
+    const entete = [
+      "Date", "Receveur", "Recette", "Gazoil", "Note gazoil",
+      "Autres dépenses", "Note autres", "Total caisse", "Net versé",
+    ];
+    const lignes = base.sorted.map((e) => [
+      e.date,
+      e.receveur || "",
+      Math.round(Number(e.recette) || 0),
+      Math.round(Number(e.gazoil) || 0),
+      (e.gazoil_note || "").replace(/[;\n\r]/g, " "),
+      Math.round(Number(e.autres) || 0),
+      (e.autres_note || "").replace(/[;\n\r]/g, " "),
+      Math.round(Number(e.total_caisse) || 0),
+      Math.round(Number(e.net) || 0),
+    ]);
+    // Séparateur ";" et BOM UTF-8 : Excel en français ouvre le fichier correctement
+    const csv = "﻿" + [entete, ...lignes].map((l) => l.join(";")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `donnees_${vehicle.immatriculation}_${base.premiereDate}_${base.derniereSaisie}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPDF = () => {
+    generateVersementsPDF(vehicle, base.sorted, base.premiereDate, base.derniereSaisie).save(
+      `rapport_${vehicle.immatriculation}_${base.premiereDate}_${base.derniereSaisie}.pdf`
+    );
+  };
+
   const pctBar = Math.max(0, Math.min(100, calc.pctRembourse));
+  const tauxActivite = base.joursObserves > 0 ? (base.joursActifs / base.joursObserves) * 100 : 0;
 
   return (
     <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto animate-fade-up">
@@ -238,7 +326,7 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
             </div>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--text-slate)]">
               Performance réelle mesurée sur l&apos;exploitation quotidienne du véhicule, du{" "}
-              {fmtDateLong(base.premiereDate)} au {fmtDateLong(base.derniereDate)}.
+              {fmtDateLong(base.premiereDate)} au {fmtDateLong(base.finPeriode)}.
               Les chiffres se mettent à jour automatiquement à chaque nouvelle saisie.
             </p>
           </div>
@@ -267,8 +355,8 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <StatCard
           icon={Banknote}
-          label="Revenu net perçu"
-          value={`${fmt(calc.netReel)} F`}
+          label="Revenu net après charges"
+          value={`${fmt(calc.netApresCharges)} F`}
           caption={`sur ${base.joursObserves} jours`}
           accent={COLORS.green}
         />
@@ -294,33 +382,29 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
           accent={COLORS.amber}
         />
         <StatCard
-          icon={Target}
-          label="Capital restant à couvrir"
-          value={`${fmt(Math.max(0, prixAchat - calc.netReel))} F`}
-          caption={calc.dateRentabilite ? `équilibre estimé : ${fmtMonthLong(calc.dateRentabilite)}` : null}
-          accent={COLORS.red}
+          icon={PiggyBank}
+          label="Provision constituée"
+          value={`${fmt(calc.provisionConstituee)} F`}
+          caption={`${fmt(provisionMensuelle)} F mis de côté / mois`}
+          accent={COLORS.purple}
         />
         <StatCard
           icon={Wallet}
           label="Jours travaillés"
           value={`${base.joursActifs} / ${base.joursObserves}`}
-          caption={`taux d'activité ${((base.joursActifs / base.joursObserves) * 100).toFixed(0)} %`}
+          caption={`taux d'activité ${tauxActivite.toFixed(0)} %`}
           accent={COLORS.slate}
         />
       </div>
 
       {/* Courbe de remboursement */}
       <div className="surface-card pro-card rounded-2xl p-5 mt-6">
-        <div className="flex items-start justify-between flex-wrap gap-3 mb-1">
-          <div>
-            <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>
-              Remboursement du capital investi
-            </div>
-            <div className="text-xs text-[var(--text-slate-light)] mt-1">
-              Cumul des revenus nets perçus. La ligne pointillée prolonge la tendance au rythme actuel
-              jusqu&apos;au remboursement des {fmt(prixAchat)} F.
-            </div>
-          </div>
+        <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>
+          Remboursement du capital investi
+        </div>
+        <div className="text-xs text-[var(--text-slate-light)] mt-1 mb-3">
+          Cumul des revenus nets perçus, charges déduites. La ligne pointillée prolonge la tendance
+          au rythme actuel jusqu&apos;au remboursement des {fmt(prixAchat)} F.
         </div>
         <ResponsiveContainer width="100%" height={300}>
           <AreaChart data={courbe} margin={{ top: 12, right: 8, left: -8, bottom: 0 }}>
@@ -349,10 +433,10 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
 
       {/* Détail mensuel */}
       <div className="surface-card pro-card rounded-2xl p-5 mt-4">
-        <div className="text-sm font-semibold mb-1" style={{ color: COLORS.ink }}>
+        <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>
           Détail mensuel de l&apos;exploitation
         </div>
-        <div className="text-xs text-[var(--text-slate-light)] mb-4">
+        <div className="text-xs text-[var(--text-slate-light)] mt-1 mb-4">
           Recette encaissée, dépenses d&apos;exploitation (carburant, parking, lavage…) et revenu net revenant à l&apos;investisseur.
         </div>
         <ResponsiveContainer width="100%" height={260}>
@@ -371,6 +455,38 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+
+        <div className="overflow-x-auto mt-5 -mx-5">
+          <table className="w-full text-sm font-figures">
+            <thead>
+              <tr style={{ backgroundColor: "var(--bg-page)" }}>
+                {["Mois", "Jours travaillés", "Recette", "Dépenses", "Net investisseur"].map((h) => (
+                  <th key={h} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {base.mois.map(([key, b]) => (
+                <tr key={key} className="border-t" style={{ borderColor: COLORS.line }}>
+                  <td className="px-5 py-2 font-sans">{fmtMonthLong(key)}</td>
+                  <td className="px-5 py-2">
+                    {b.joursTravailles}
+                    <span className="text-[11px] font-sans text-[var(--text-slate-light)] ml-1.5">
+                      / {b.joursSaisis} jours saisis
+                    </span>
+                  </td>
+                  <td className="px-5 py-2">{fmt(b.recette)}</td>
+                  <td className="px-5 py-2">{fmt(b.depenses)}</td>
+                  <td className="px-5 py-2 font-semibold" style={{ color: b.net >= 0 ? COLORS.green : COLORS.red }}>
+                    {fmt(b.net)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Scénarios */}
@@ -378,7 +494,7 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
         <div className="px-5 py-4 border-b" style={{ borderColor: COLORS.line }}>
           <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>Scénarios de rentabilité</div>
           <div className="text-xs text-[var(--text-slate-light)] mt-1">
-            Trois hypothèses d&apos;activité appliquées au revenu net mensuel constaté.
+            Trois hypothèses d&apos;activité appliquées au revenu net mensuel constaté, charges déduites.
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -421,40 +537,83 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
         </div>
       </div>
 
-      {/* Paramètre ajustable + hypothèses */}
+      {/* Paramètres de charges */}
+      <div className="surface-card rounded-2xl p-5 mt-4">
+        <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: COLORS.ink }}>
+          <SlidersHorizontal size={15} color={COLORS.fleet} /> Charges et provisions
+        </div>
+        <div className="text-xs text-[var(--text-slate-light)] mt-1 mb-4">
+          Ces montants ne figurent pas dans les saisies quotidiennes. Ajustez-les pour voir leur
+          impact immédiat sur tous les chiffres ci-dessus.
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <ParamField label="Assurance" value={assuranceMensuelle} onChange={setAssuranceMensuelle} step={1000} suffix="F/mois" />
+          <ParamField label="Coût d'un entretien" value={coutEntretien} onChange={setCoutEntretien} step={5000} suffix="F" />
+          <ParamField label="Entretien tous les" value={kmParEntretien} onChange={setKmParEntretien} step={1000} suffix="km" />
+          <ParamField label="Distance parcourue" value={kmParMois} onChange={setKmParMois} step={500} suffix="km/mois" />
+          <ParamField label="Mise de côté" value={provisionMensuelle} onChange={setProvisionMensuelle} step={10000} suffix="F/mois" />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+          <div className="rounded-xl bg-[var(--bg-page)] p-3">
+            <div className="text-[11px] text-[var(--text-slate)]">Entretien mensuel estimé</div>
+            <div className="font-figures text-base font-semibold mt-0.5" style={{ color: COLORS.ink }}>
+              {fmt(charges.entretienMensuel)} F
+            </div>
+            <div className="text-[10px] text-[var(--text-slate-light)] mt-1">
+              {charges.entretiensParMois.toFixed(2)} entretien / mois
+            </div>
+          </div>
+          <div className="rounded-xl bg-[var(--bg-page)] p-3">
+            <div className="text-[11px] text-[var(--text-slate)]">Charges totales</div>
+            <div className="font-figures text-base font-semibold mt-0.5" style={{ color: COLORS.ink }}>
+              {fmt(charges.chargesMensuelles)} F / mois
+            </div>
+            <div className="text-[10px] text-[var(--text-slate-light)] mt-1">
+              soit {fmt(charges.chargesAnnuelles)} F / an
+            </div>
+          </div>
+          <div className="rounded-xl bg-[var(--bg-page)] p-3">
+            <div className="text-[11px] text-[var(--text-slate)]">Net distribuable</div>
+            <div
+              className="font-figures text-base font-semibold mt-0.5"
+              style={{ color: calc.netDistribuableMensuel >= 0 ? COLORS.green : COLORS.red }}
+            >
+              {fmt(calc.netDistribuableMensuel)} F / mois
+            </div>
+            <div className="text-[10px] text-[var(--text-slate-light)] mt-1">
+              après mise de côté de {fmt(provisionMensuelle)} F
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Export + hypothèses */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
         <div className="surface-card rounded-2xl p-5">
           <div className="text-sm font-semibold mb-1" style={{ color: COLORS.ink }}>
-            Simuler des charges annuelles
+            Télécharger les données détaillées
           </div>
           <div className="text-xs text-[var(--text-slate-light)] mb-4">
-            Assurance, visite technique, gros entretien… Ces montants ne figurent pas dans les saisies
-            quotidiennes. Entrez une estimation annuelle pour voir son impact sur tous les chiffres ci-dessus.
+            L&apos;intégralité des saisies journalières ({base.sorted.length} jours), pour vérifier
+            vous-même les chiffres présentés sur cette page.
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={0}
-              step={50000}
-              value={chargesAnnuelles}
-              onChange={(e) => setChargesAnnuelles(Math.max(0, Number(e.target.value) || 0))}
-              className="w-40 text-sm font-figures bg-[var(--bg-page)] border border-[var(--border-line)] rounded-lg px-3 py-2"
-            />
-            <span className="text-sm text-[var(--text-slate)]">FCFA / an</span>
-            {chargesAnnuelles > 0 && (
-              <button
-                onClick={() => setChargesAnnuelles(0)}
-                className="text-xs text-[var(--text-slate-light)] underline underline-offset-2 ml-1"
-              >
-                Réinitialiser
-              </button>
-            )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={exportCSV}
+              className="flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg text-white"
+              style={{ backgroundColor: COLORS.green }}
+            >
+              <FileSpreadsheet size={15} /> Excel (CSV)
+            </button>
+            <button
+              onClick={exportPDF}
+              className="flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg text-white"
+              style={{ backgroundColor: COLORS.fleet }}
+            >
+              <FileText size={15} /> Rapport PDF
+            </button>
           </div>
-          {chargesAnnuelles > 0 && (
-            <div className="text-xs text-[var(--text-slate)] mt-3">
-              Soit {fmt(chargesAnnuelles / 12)} F par mois déduits du revenu net.
-            </div>
-          )}
         </div>
 
         <div className="surface-card rounded-2xl p-5">
@@ -463,19 +622,26 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
           </div>
           <ul className="text-xs text-[var(--text-slate)] leading-relaxed flex flex-col gap-1.5 list-disc pl-4">
             <li>
-              Période réellement observée : <strong>{base.joursObserves} jours</strong> ({base.moisObserves.toFixed(1)} mois),
-              du {fmtDateLong(base.premiereDate)} au {fmtDateLong(base.derniereDate)}.
+              Période prise en compte : du {fmtDateLong(base.premiereDate)} à aujourd&apos;hui
+              ({base.joursObserves} jours, soit {base.moisObserves.toFixed(1)} mois). Dernière saisie
+              enregistrée le {fmtDateLong(base.derniereSaisie)}. Les jours sans saisie comptent dans
+              la période, pour ne pas gonfler les moyennes.
             </li>
             <li>
               Les projections prolongent simplement le rythme constaté. Plus la période observée est courte,
               moins l&apos;extrapolation est fiable — la saisonnalité et les pannes ne sont pas modélisées.
             </li>
             <li>
-              Dépenses imprévues déjà déduites sur la période : <strong>{fmt(depensesImprevues)} F</strong>.
+              Charges déduites : {fmt(charges.chargesMensuelles)} F/mois (assurance {fmt(assuranceMensuelle)} F
+              + entretien {fmt(charges.entretienMensuel)} F estimé sur {fmt(kmParMois)} km/mois).
             </li>
             <li>
-              Charges annuelles simulées : <strong>{fmt(chargesAnnuelles)} F/an</strong>
-              {chargesAnnuelles === 0 && " (aucune — les chiffres reflètent uniquement les saisies quotidiennes)"}.
+              Dépenses imprévues déjà constatées sur la période : <strong>{fmt(depensesImprevues)} F</strong>.
+            </li>
+            <li>
+              La mise de côté de {fmt(provisionMensuelle)} F/mois constitue une réserve : elle reste
+              acquise à l&apos;investisseur et sert à couvrir les réparations futures. Elle est donc
+              exclue du calcul de rentabilité, mais retirée du net distribuable.
             </li>
             <li>
               Ne sont pris en compte ni la valeur de revente du véhicule, ni sa dépréciation, ni l&apos;inflation.
@@ -489,7 +655,7 @@ export default function InvestisseurClient({ vehicle, entries, depensesImprevues
       </div>
 
       <div className="text-xs text-[var(--text-slate-light)] mt-8 pb-10">
-        Données issues du suivi d&apos;exploitation FMB Trans-Mobilité Services · dernière saisie le {fmtDateLong(base.derniereDate)}.
+        Données issues du suivi d&apos;exploitation FMB Trans-Mobilité Services · dernière saisie le {fmtDateLong(base.derniereSaisie)}.
       </div>
     </main>
   );

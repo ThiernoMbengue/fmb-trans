@@ -111,6 +111,7 @@ export default async function InvestisseurPage({ searchParams }) {
       entries={entries}
       depensesImprevues={depensesImprevues}
       prixAchat={PRIX_ACHAT}
+      aujourdhui={new Date().toISOString().slice(0, 10)}
     />
   );
 }
