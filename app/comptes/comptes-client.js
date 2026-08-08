@@ -20,7 +20,7 @@ function Field({ label, children }) {
 
 const emptyForm = () => ({ email: "", password: "", nom: "", role: "proprietaire" });
 
-export default function ComptesClient({ profiles, currentUserId, serviceKeyConfigured }) {
+export default function ComptesClient({ profiles, currentUserId }) {
   const router = useRouter();
   const [rows, setRows] = useState(profiles);
   const [form, setForm] = useState(emptyForm());
@@ -31,30 +31,25 @@ export default function ComptesClient({ profiles, currentUserId, serviceKeyConfi
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), type === "error" ? 7000 : 3000);
+    setTimeout(() => setToast(null), 3000);
   };
 
   const onCreate = async () => {
     if (!form.email || !form.password) return;
     setCreating(true);
-    try {
-      const fd = new FormData();
-      fd.set("email", form.email);
-      fd.set("password", form.password);
-      fd.set("nom", form.nom);
-      fd.set("role", form.role);
-      const res = await createAccount(fd);
-      if (res?.error) {
-        showToast("Erreur : " + res.error, "error");
-      } else {
-        showToast("Compte créé");
-        setForm(emptyForm());
-        router.refresh();
-      }
-    } catch (e) {
-      showToast("Erreur : " + (e?.message || "échec de la création"), "error");
-    } finally {
-      setCreating(false);
+    const fd = new FormData();
+    fd.set("email", form.email);
+    fd.set("password", form.password);
+    fd.set("nom", form.nom);
+    fd.set("role", form.role);
+    const res = await createAccount(fd);
+    setCreating(false);
+    if (res?.error) {
+      showToast("Erreur : " + res.error, "error");
+    } else {
+      showToast("Compte créé");
+      setForm(emptyForm());
+      router.refresh();
     }
   };
 
@@ -63,29 +58,20 @@ export default function ComptesClient({ profiles, currentUserId, serviceKeyConfi
   const onSaveRow = (row) => {
     setSavingId(row.id);
     startTransition(async () => {
-      try {
-        const res = await updateAccount(row.id, { nom: row.nom, role: row.role });
-        if (res?.error) showToast("Erreur : " + res.error, "error");
-      } catch (e) {
-        showToast("Erreur : " + (e?.message || "échec de la mise à jour"), "error");
-      } finally {
-        setSavingId(null);
-      }
+      const res = await updateAccount(row.id, { nom: row.nom, role: row.role });
+      setSavingId(null);
+      if (res?.error) showToast("Erreur : " + res.error, "error");
     });
   };
 
   const onDelete = (id) => {
     if (!confirm("Supprimer ce compte ? Ses véhicules resteront mais ne seront plus rattachés à personne.")) return;
     startTransition(async () => {
-      try {
-        const res = await deleteAccount(id);
-        if (res?.error) showToast("Erreur : " + res.error, "error");
-        else {
-          showToast("Compte supprimé");
-          setRows((r) => r.filter((x) => x.id !== id));
-        }
-      } catch (e) {
-        showToast("Erreur : " + (e?.message || "échec de la suppression"), "error");
+      const res = await deleteAccount(id);
+      if (res?.error) showToast("Erreur : " + res.error, "error");
+      else {
+        showToast("Compte supprimé");
+        setRows((r) => r.filter((x) => x.id !== id));
       }
     });
   };
@@ -106,20 +92,6 @@ export default function ComptesClient({ profiles, currentUserId, serviceKeyConfi
       <p className="text-xs text-[var(--text-slate-light)] mb-6">
         Crée les comptes de connexion des propriétaires et des gestionnaires. Rattache ensuite les véhicules depuis l'onglet « Véhicules ».
       </p>
-
-      {!serviceKeyConfigured && (
-        <div className="flex items-start gap-2 text-sm rounded-xl px-4 py-3 mb-6 border" style={{ color: COLORS.red, borderColor: COLORS.red, backgroundColor: "color-mix(in srgb, var(--red) 8%, transparent)" }}>
-          <AlertCircle size={16} className="mt-0.5 shrink-0" />
-          <div>
-            <div className="font-semibold">Clé <code>SUPABASE_SERVICE_ROLE_KEY</code> manquante</div>
-            <div className="text-xs mt-1 text-[var(--text-slate)]">
-              La création et la suppression de comptes ne fonctionneront pas tant qu'elle n'est pas ajoutée.
-              Copie-la depuis Supabase (Project Settings → API → <code>service_role</code>), mets-la dans <code>.env.local</code>
-              en local et dans les variables d'environnement Vercel, puis redémarre / redéploie le site.
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6 mb-6">
         <div className="text-sm font-semibold mb-5" style={{ color: COLORS.ink }}>Créer un compte</div>
