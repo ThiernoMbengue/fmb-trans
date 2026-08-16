@@ -6,7 +6,7 @@ import InvestisseurClient from "./investisseur-client";
 
 export const dynamic = "force-dynamic";
 
-const PRIX_ACHAT = Number(process.env.INVESTOR_PRIX_ACHAT) || 6000000;
+const PRIX_ACHAT = Number(process.env.INVESTOR_PRIX_ACHAT) || 6500000;
 const VEHICLE_IMMAT = process.env.INVESTOR_VEHICLE_IMMAT || "AB-449-JL";
 
 function Gate({ error }) {

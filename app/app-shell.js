@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard, ClipboardList, HandCoins, Bus, FileText, Users,
+  LayoutDashboard, ClipboardList, HandCoins, Bus, FileText, Users, Receipt,
   LogOut, LogIn, Moon, Sun, Menu, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const NAV_ITEMS = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard, roles: ["admin", "proprietaire"] },
+  { href: "/paiements", label: "Paiements", icon: Receipt, roles: ["admin", "proprietaire"] },
   { href: "/avances", label: "Avances", icon: HandCoins, roles: ["admin", "proprietaire"] },
   { href: "/saisie", label: "Saisie", icon: ClipboardList, roles: ["admin"] },
   { href: "/vehicules", label: "Véhicules", icon: Bus, roles: ["admin"] },
