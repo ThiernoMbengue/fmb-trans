@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { Lock, AlertCircle, TrendingUp } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { descripteurSecret, jetonSession, lireHachage } from "@/lib/investor-access";
 import { unlockInvestor } from "./actions";
 import InvestisseurClient from "./investisseur-client";
 
@@ -66,10 +67,15 @@ function Message({ children }) {
 }
 
 export default async function InvestisseurPage({ searchParams }) {
-  const unlocked = cookies().get("investisseur_ok")?.value === "1";
+  const admin = process.env.SUPABASE_SERVICE_ROLE_KEY ? createAdminClient() : null;
+
+  // Le cookie porte un jeton dérivé du mot de passe courant : si celui-ci a
+  // été changé entre-temps, l'accès est refermé automatiquement.
+  const descripteur = descripteurSecret(await lireHachage(admin));
+  const unlocked = cookies().get("investisseur_ok")?.value === jetonSession(descripteur);
   if (!unlocked) return <Gate error={searchParams?.error} />;
 
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (!admin) {
     return (
       <Message>
         <div className="font-semibold text-[var(--red)] mb-1">Configuration incomplète</div>
@@ -79,7 +85,6 @@ export default async function InvestisseurPage({ searchParams }) {
     );
   }
 
-  const admin = createAdminClient();
   const { data: vehicles } = await admin.from("vehicles").select("*").order("created_at", { ascending: true });
 
   if (!vehicles?.length) {

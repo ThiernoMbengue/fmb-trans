@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, MISSING_SERVICE_KEY } from "@/lib/supabase/admin";
 import { getRole } from "@/lib/supabase/role";
+import { hacherMotDePasse, PARAMETRE_MOT_DE_PASSE } from "@/lib/investor-access";
 import { revalidatePath } from "next/cache";
 
 async function assertAdmin() {
@@ -75,6 +76,46 @@ export async function deleteAccount(id) {
 
     revalidatePath("/comptes");
     revalidatePath("/vehicules");
+    return { success: true };
+  } catch (e) {
+    return { error: e?.message || "Erreur inattendue" };
+  }
+}
+
+// Définit le mot de passe de l'espace investisseur. Il est enregistré haché :
+// personne, pas même le gestionnaire, ne peut le relire ensuite — il ne peut
+// que le remplacer. Changer le mot de passe referme les accès en cours.
+export async function setInvestorPassword(formData) {
+  try {
+    const supabase = createClient();
+    const { role } = await getRole(supabase);
+    if (role !== "admin") return { error: "Accès refusé" };
+
+    const motDePasse = (formData.get("password") || "").trim();
+    if (motDePasse.length < 4) {
+      return { error: "Le mot de passe doit comporter au moins 4 caractères" };
+    }
+
+    const admin = createAdminClient();
+    if (!admin) return { error: MISSING_SERVICE_KEY };
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const { error } = await admin.from("app_settings").upsert(
+      {
+        cle: PARAMETRE_MOT_DE_PASSE,
+        valeur: hacherMotDePasse(motDePasse),
+        updated_at: new Date().toISOString(),
+        updated_by: user?.id,
+      },
+      { onConflict: "cle" }
+    );
+    if (error) return { error: error.message };
+
+    revalidatePath("/comptes");
+    revalidatePath("/investisseur");
     return { success: true };
   } catch (e) {
     return { error: e?.message || "Erreur inattendue" };

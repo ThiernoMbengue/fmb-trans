@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, Trash2, Loader2, AlertCircle } from "lucide-react";
-import { createAccount, updateAccount, deleteAccount } from "./actions";
+import { UserPlus, Trash2, Loader2, AlertCircle, KeyRound, TrendingUp } from "lucide-react";
+import { createAccount, updateAccount, deleteAccount, setInvestorPassword } from "./actions";
 
 const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)", green: "var(--green)", red: "var(--red)", line: "var(--border-line)" };
 const inputClass =
@@ -20,7 +20,23 @@ function Field({ label, children }) {
 
 const emptyForm = () => ({ email: "", password: "", nom: "", role: "proprietaire" });
 
-export default function ComptesClient({ profiles, currentUserId, serviceKeyConfigured }) {
+const fmtDateHeure = (iso) => {
+  if (!iso) return null;
+  return new Date(iso).toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+export default function ComptesClient({
+  profiles,
+  currentUserId,
+  serviceKeyConfigured,
+  investorPasswordSetAt,
+}) {
   const router = useRouter();
   const [rows, setRows] = useState(profiles);
   const [form, setForm] = useState(emptyForm());
@@ -28,6 +44,31 @@ export default function ComptesClient({ profiles, currentUserId, serviceKeyConfi
   const [toast, setToast] = useState(null);
   const [pending, startTransition] = useTransition();
   const [savingId, setSavingId] = useState(null);
+  const [motDePasseInvestisseur, setMotDePasseInvestisseur] = useState("");
+  const [majInvestisseur, setMajInvestisseur] = useState(false);
+  const [definiLe, setDefiniLe] = useState(investorPasswordSetAt);
+
+  const onSetInvestorPassword = async () => {
+    if (motDePasseInvestisseur.trim().length < 4) return;
+    setMajInvestisseur(true);
+    try {
+      const fd = new FormData();
+      fd.set("password", motDePasseInvestisseur.trim());
+      const res = await setInvestorPassword(fd);
+      if (res?.error) {
+        showToast("Erreur : " + res.error, "error");
+      } else {
+        showToast("Mot de passe investisseur mis à jour");
+        setMotDePasseInvestisseur("");
+        setDefiniLe(new Date().toISOString());
+        router.refresh();
+      }
+    } catch (e) {
+      showToast("Erreur : " + (e?.message || "échec de la mise à jour"), "error");
+    } finally {
+      setMajInvestisseur(false);
+    }
+  };
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -214,6 +255,64 @@ export default function ComptesClient({ profiles, currentUserId, serviceKeyConfi
             </table>
           </div>
         )}
+      </div>
+
+      {/* Accès à l'espace investisseur */}
+      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6 mt-6">
+        <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: COLORS.ink }}>
+          <TrendingUp size={15} color={COLORS.fleet} /> Accès à l&apos;espace investisseur
+        </div>
+        <p className="text-xs text-[var(--text-slate-light)] mt-2 mb-4 leading-relaxed max-w-2xl">
+          La page <code>/investisseur</code> est ouverte à toute personne disposant du mot de passe,
+          sans création de compte ni adresse e-mail. Vous pouvez le changer à tout moment ci-dessous.
+        </p>
+
+        <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2.5 mb-4" style={{ backgroundColor: "var(--bg-page)" }}>
+          <KeyRound size={14} className="mt-0.5 shrink-0" style={{ color: definiLe ? COLORS.green : COLORS.red }} />
+          <div className="text-[var(--text-slate)] leading-relaxed">
+            {definiLe ? (
+              <>
+                Mot de passe personnalisé, défini le <strong>{fmtDateHeure(definiLe)}</strong>.
+                Il est enregistré chiffré : il ne peut plus être relu, seulement remplacé.
+              </>
+            ) : (
+              <>
+                <strong style={{ color: COLORS.red }}>Mot de passe par défaut encore actif.</strong>{" "}
+                Il figure dans le code source du projet, donc visible de quiconque y a accès —
+                définissez-en un nouveau ci-dessous.
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-0">
+            <Field label="Nouveau mot de passe">
+              <input
+                type="text"
+                className={inputClass + " sm:w-64"}
+                value={motDePasseInvestisseur}
+                onChange={(e) => setMotDePasseInvestisseur(e.target.value)}
+                placeholder="4 caractères minimum"
+              />
+            </Field>
+          </div>
+          <button
+            onClick={onSetInvestorPassword}
+            disabled={majInvestisseur || motDePasseInvestisseur.trim().length < 4}
+            className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white disabled:opacity-60"
+            style={{ backgroundColor: COLORS.fleet }}
+          >
+            {majInvestisseur ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={15} />}
+            Mettre à jour
+          </button>
+        </div>
+
+        <p className="text-[11px] text-[var(--text-slate-light)] mt-3 leading-relaxed">
+          Changer le mot de passe <strong>referme immédiatement l&apos;accès</strong> à toutes les
+          personnes connectées avec l&apos;ancien : c&apos;est le moyen de couper l&apos;accès à
+          quelqu&apos;un à qui vous l&apos;aviez communiqué.
+        </p>
       </div>
     </main>
   );

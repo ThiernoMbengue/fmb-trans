@@ -10,7 +10,7 @@ Site de suivi des versements de flotte, accès réservé aux comptes connectés 
 
 1. **Créer le projet Supabase** (base de données + comptes)
 2. **Créer les tables**, dans l'éditeur SQL Supabase, dans cet ordre :
-   `schema.sql` → `migration_avances.sql` → `migration_rapports.sql` → `migration_roles.sql` → `migration_demandes.sql` → `migration_paiements.sql`
+   `schema.sql` → `migration_avances.sql` → `migration_rapports.sql` → `migration_roles.sql` → `migration_demandes.sql` → `migration_paiements.sql` → `migration_parametres.sql`
 3. **Créer le premier compte gestionnaire** (Authentication > Users), puis le passer admin :
    `update profiles set role = 'admin' where id = (select id from auth.users where email = 'ton_email@exemple.com');`
 4. **Ajouter la clé `service_role`** (Project Settings > API) dans `SUPABASE_SERVICE_ROLE_KEY` (local et Vercel) — nécessaire pour créer d'autres comptes depuis l'onglet « Comptes » du site
