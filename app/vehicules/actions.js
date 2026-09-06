@@ -39,3 +39,24 @@ export async function deleteVehicle(id) {
   revalidatePath("/saisie");
   return { success: true };
 }
+
+// Rattache (ou détache) un véhicule existant au compte d'un propriétaire.
+// C'est ce lien — et non le champ texte "propriétaire" — qui donne au
+// propriétaire l'accès à son véhicule.
+export async function updateVehicleOwner(vehicleId, ownerId) {
+  try {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("vehicles")
+      .update({ owner_id: ownerId || null })
+      .eq("id", vehicleId);
+
+    if (error) return { error: error.message };
+
+    revalidatePath("/vehicules");
+    revalidatePath("/");
+    return { success: true };
+  } catch (e) {
+    return { error: e?.message || "Erreur inattendue" };
+  }
+}

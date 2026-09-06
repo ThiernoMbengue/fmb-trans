@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/supabase/role";
 import VehicleForm from "./vehicle-form";
 import DeleteButton from "./delete-button";
+import OwnerSelect from "./owner-select";
 
 const COLORS = { ink: "var(--text-ink)", line: "var(--border-line)" };
 
@@ -16,16 +17,16 @@ export default async function VehiculesPage() {
     supabase.from("profiles").select("id, nom, email").eq("role", "proprietaire").order("nom", { ascending: true }),
   ]);
 
-  const ownerName = (id) => {
-    const o = owners?.find((x) => x.id === id);
-    return o ? (o.nom || o.email) : null;
-  };
-
   return (
-    <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto">
-      <h1 className="text-lg font-semibold mb-6" style={{ color: COLORS.ink }}>
+    <main className="px-6 md:px-10 py-8 max-w-4xl mx-auto">
+      <h1 className="text-lg font-semibold mb-1" style={{ color: COLORS.ink }}>
         Véhicules de la flotte
       </h1>
+      <p className="text-xs text-[var(--text-slate-light)] mb-6 max-w-2xl leading-relaxed">
+        La colonne « Propriétaire » est une simple étiquette. C&apos;est la colonne
+        « Compte lié » qui donne au propriétaire l&apos;accès à son véhicule : tant qu&apos;aucun
+        compte n&apos;y est rattaché, il ne verra aucune donnée en se connectant.
+      </p>
 
       <VehicleForm owners={owners || []} />
 
@@ -47,13 +48,7 @@ export default async function VehiculesPage() {
                 <td className="px-4 py-2.5 font-mono">{v.immatriculation}</td>
                 <td className="px-4 py-2.5">{v.proprietaire}</td>
                 <td className="px-4 py-2.5">
-                  {ownerName(v.owner_id) ? (
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(30,122,95,0.1)", color: "var(--green)" }}>
-                      {ownerName(v.owner_id)}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-[var(--text-slate-light)]">— aucun compte lié —</span>
-                  )}
+                  <OwnerSelect vehicleId={v.id} ownerId={v.owner_id} owners={owners || []} />
                 </td>
                 <td className="px-4 py-2.5">{v.chauffeur}</td>
                 <td className="px-4 py-2.5">{v.taux_chauffeur ? `${v.taux_chauffeur} F` : "5000 F"}</td>
