@@ -3,6 +3,19 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
+// La colonne sans_chauffeur est ajoutée par migration_location.sql. Tant que
+// celle-ci n'a pas été exécutée, on réenregistre sans elle plutôt que de
+// bloquer la saisie : le dossier investisseur sait retomber sur la détection
+// par les montants.
+async function upsertEntries(supabase, rows) {
+  let { error } = await supabase.from("entries").upsert(rows, { onConflict: "vehicle_id,date" });
+  if (error && /sans_chauffeur/i.test(error.message || "")) {
+    const sansColonne = rows.map(({ sans_chauffeur, ...reste }) => reste);
+    ({ error } = await supabase.from("entries").upsert(sansColonne, { onConflict: "vehicle_id,date" }));
+  }
+  return error;
+}
+
 export async function saveEntry(payload) {
   const supabase = createClient();
   const {
@@ -20,13 +33,11 @@ export async function saveEntry(payload) {
     autres_note: payload.autresNote || "",
     total_caisse: Number(payload.totalCaisse) || 0,
     net: Number(payload.net) || 0,
+    sans_chauffeur: payload.sansChauffeur === true,
     created_by: user?.id,
   };
 
-  const { error } = await supabase
-    .from("entries")
-    .upsert(row, { onConflict: "vehicle_id,date" });
-
+  const error = await upsertEntries(supabase, [row]);
   if (error) return { error: error.message };
 
   revalidatePath("/saisie");
@@ -69,13 +80,13 @@ export async function saveLocationRange(payload) {
     autres_note: note || "Location",
     total_caisse: amount,
     net: amount,
+    // Une location à montant fixe est par définition une location sans
+    // chauffeur : aucun salaire n'est dû sur ces journées.
+    sans_chauffeur: true,
     created_by: user?.id,
   }));
 
-  const { error } = await supabase
-    .from("entries")
-    .upsert(rows, { onConflict: "vehicle_id,date" });
-
+  const error = await upsertEntries(supabase, rows);
   if (error) return { error: error.message };
 
   revalidatePath("/saisie");

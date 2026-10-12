@@ -28,6 +28,9 @@ create table if not exists entries (
   autres_note text,
   total_caisse numeric not null default 0,
   net numeric not null default 0,
+  -- Location du véhicule seul : le client conduit, aucun salaire de
+  -- chauffeur n'est dû ce jour-là.
+  sans_chauffeur boolean not null default false,
   created_by uuid references auth.users(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -117,3 +120,12 @@ values
 ('11111111-1111-1111-1111-111111111111','2026-07-18','Weuz',0,0,'',0,'',0,0),
 ('11111111-1111-1111-1111-111111111111','2026-07-19','Weuz',36345,10100,'Gazoil',1000,'',26245,25245)
 on conflict (vehicle_id, date) do nothing;
+
+-- Journées de location sans chauffeur de l'historique de départ :
+-- une recette encaissée, et strictement aucune dépense du jour.
+update entries
+set sans_chauffeur = true
+where recette > 0
+  and coalesce(gazoil, 0) = 0
+  and coalesce(autres, 0) = 0
+  and sans_chauffeur = false;

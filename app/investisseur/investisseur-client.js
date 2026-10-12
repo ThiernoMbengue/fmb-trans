@@ -33,6 +33,22 @@ const DEFAUTS = {
   joursTravaillesParSemaine: 6,  // repos le dimanche
 };
 
+// Certaines journées sont des locations du véhicule seul : le client prend le
+// volant, paie son carburant et nous remet un forfait. Il n'y a donc ni frais
+// du jour à notre charge, ni chauffeur FMB à payer.
+//
+// Le marqueur posé à la saisie (colonne sans_chauffeur) fait foi. Pour les
+// journées enregistrées avant son introduction — ou si la migration n'a pas
+// encore été exécutée — on retombe sur le profil caractéristique d'une
+// location : une recette encaissée et strictement aucune dépense du jour. Le
+// repli teste bien les deux postes, car un jour avec chauffeur peut avoir un
+// gazoil nul tout en ayant d'autres frais (parking, réparation).
+const estLocationSansChauffeur = (e) =>
+  Number(e.recette) > 0 &&
+  (e.sans_chauffeur === true ||
+    (e.sans_chauffeur == null && !Number(e.gazoil) && !Number(e.autres)));
+const estJourAvecChauffeur = (e) => Number(e.recette) > 0 && !estLocationSansChauffeur(e);
+
 const fmt = (n) => {
   const num = Math.round(Number(n) || 0);
   const neg = num < 0;
@@ -206,17 +222,26 @@ export default function InvestisseurClient({
       (s, e) => s + (Number(e.gazoil) || 0) + (Number(e.autres) || 0), 0
     );
     const netRemonte = sorted.reduce((s, e) => s + (Number(e.net) || 0), 0);
-    const joursTravailles = sorted.filter((e) => Number(e.recette) > 0).length;
+
+    const joursAvecChauffeur = sorted.filter(estJourAvecChauffeur).length;
+    const joursLocation = sorted.filter(estLocationSansChauffeur).length;
+    const joursTravailles = joursAvecChauffeur + joursLocation;
+    const netLocation = sorted
+      .filter(estLocationSansChauffeur)
+      .reduce((s, e) => s + (Number(e.net) || 0), 0);
 
     const parMois = new Map();
     for (const e of sorted) {
       const key = monthKeyOf(e.date);
-      if (!parMois.has(key)) parMois.set(key, { net: 0, recette: 0, depenses: 0, joursTravailles: 0 });
+      if (!parMois.has(key)) {
+        parMois.set(key, { net: 0, recette: 0, depenses: 0, joursAvecChauffeur: 0, joursLocation: 0 });
+      }
       const b = parMois.get(key);
       b.net += Number(e.net) || 0;
       b.recette += Number(e.recette) || 0;
       b.depenses += (Number(e.gazoil) || 0) + (Number(e.autres) || 0);
-      if (Number(e.recette) > 0) b.joursTravailles += 1;
+      if (estLocationSansChauffeur(e)) b.joursLocation += 1;
+      else if (estJourAvecChauffeur(e)) b.joursAvecChauffeur += 1;
     }
     const mois = [...parMois.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
@@ -224,14 +249,17 @@ export default function InvestisseurClient({
 
     return {
       sorted, premiereDate, derniereSaisie, finPeriode, joursObserves, moisObserves,
-      recetteBrute, depensesQuotidiennes, netRemonte, joursTravailles, mois, saisiesFutures,
+      recetteBrute, depensesQuotidiennes, netRemonte, mois, saisiesFutures,
+      joursTravailles, joursAvecChauffeur, joursLocation, netLocation,
       montantFutur: saisiesFutures.reduce((s, e) => s + (Number(e.net) || 0), 0),
     };
   }, [entries, aujourdhui]);
 
   /* ---- Compte de résultat sur la période observée ---- */
   const compte = useMemo(() => {
-    const chauffeur = base.joursTravailles * chauffeurParJour;
+    // Seuls les jours où un chauffeur FMB était au volant sont rémunérés : les
+    // journées de location sans chauffeur ne génèrent aucun salaire.
+    const chauffeur = base.joursAvecChauffeur * chauffeurParJour;
     const assurance = assuranceMensuelle * base.moisObserves;
     const entretienMensuel = entretienTousLesMois > 0 ? coutEntretien / entretienTousLesMois : 0;
     const entretien = entretienMensuel * base.moisObserves;
@@ -306,7 +334,7 @@ export default function InvestisseurClient({
 
     let cumul = 0;
     const points = base.mois.map(([key, b]) => {
-      const brut = b.net - b.joursTravailles * chauffeurParJour - chargesMensuelles;
+      const brut = b.net - b.joursAvecChauffeur * chauffeurParJour - chargesMensuelles;
       const net = brut > 0 ? brut * (1 - tauxGestion / 100) : brut;
       cumul += net;
       return { label: fmtMonthLabel(key), reel: Math.round(cumul), projection: null };
@@ -336,14 +364,16 @@ export default function InvestisseurClient({
   const moisDetail = useMemo(() => {
     const chargesFixes = assuranceMensuelle + compte.entretienMensuel;
     return base.mois.map(([key, b]) => {
-      const chauffeur = b.joursTravailles * chauffeurParJour;
+      const chauffeur = b.joursAvecChauffeur * chauffeurParJour;
       const brut = b.net - chauffeur - chargesFixes;
       const net = brut > 0 ? brut * (1 - tauxGestion / 100) : brut;
       return {
         key,
         label: fmtMonthLabel(key),
         labelLong: fmtMonthLong(key),
-        joursTravailles: b.joursTravailles,
+        joursAvecChauffeur: b.joursAvecChauffeur,
+        joursLocation: b.joursLocation,
+        joursTravailles: b.joursAvecChauffeur + b.joursLocation,
         recette: b.recette,
         depenses: b.depenses,
         netRemonte: b.net,
@@ -372,6 +402,9 @@ export default function InvestisseurClient({
     joursObserves: base.joursObserves,
     moisObserves: base.moisObserves,
     joursTravailles: base.joursTravailles,
+    joursAvecChauffeur: base.joursAvecChauffeur,
+    joursLocation: base.joursLocation,
+    netLocation: base.netLocation,
     recetteBrute: base.recetteBrute,
     depensesQuotidiennes: base.depensesQuotidiennes,
     netRemonte: base.netRemonte,
@@ -511,8 +544,9 @@ export default function InvestisseurClient({
               {base.joursObserves} jours ({base.moisObserves.toFixed(1)} mois)
             </div>
             <div className="text-[11px] text-[var(--text-slate-light)] mt-1 leading-relaxed">
-              Dont {base.joursTravailles} jours effectivement travaillés. Dernière saisie le{" "}
-              {fmtDateLong(base.derniereSaisie)}.
+              Dont {base.joursTravailles} jours effectivement travaillés :{" "}
+              {base.joursAvecChauffeur} avec chauffeur et {base.joursLocation} en location sans
+              chauffeur. Dernière saisie le {fmtDateLong(base.derniereSaisie)}.
             </div>
           </div>
           <div className="rounded-xl bg-[var(--bg-page)] p-4">
@@ -522,6 +556,37 @@ export default function InvestisseurClient({
               Dont 2 Renault QM3 identiques, acquis à des conditions plus favorables. Ils
               n&apos;ont pas encore de données d&apos;exploitation : leur mise en service
               affinera les moyennes présentées ici.
+            </div>
+          </div>
+        </div>
+
+        {/* Deux modes d'exploitation : le salaire du chauffeur ne s'applique
+            qu'au premier, ce qui doit se lire clairement dans le dossier. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <div className="rounded-xl bg-[var(--bg-page)] p-4">
+            <div className="flex items-center gap-2">
+              <UserCog size={14} color={COLORS.fleet} />
+              <div className="text-xs font-semibold" style={{ color: COLORS.ink }}>
+                Avec chauffeur — {base.joursAvecChauffeur} jours
+              </div>
+            </div>
+            <div className="text-[11px] text-[var(--text-slate-light)] mt-1.5 leading-relaxed">
+              VTC (Yango) et courses à la journée. Le chauffeur FMB conduit, le carburant et
+              les frais du jour sont à notre charge, et le salaire de {fmt(chauffeurParJour)} F
+              est dû.
+            </div>
+          </div>
+          <div className="rounded-xl bg-[var(--bg-page)] p-4">
+            <div className="flex items-center gap-2">
+              <Bus size={14} color={COLORS.green} />
+              <div className="text-xs font-semibold" style={{ color: COLORS.ink }}>
+                Location sans chauffeur — {base.joursLocation} jours
+              </div>
+            </div>
+            <div className="text-[11px] text-[var(--text-slate-light)] mt-1.5 leading-relaxed">
+              Le client prend le volant et paie son carburant : il verse un forfait
+              ({fmt(base.netLocation)} F au total sur la période), sans aucune dépense ni
+              salaire de chauffeur à déduire.
             </div>
           </div>
         </div>
@@ -580,7 +645,11 @@ export default function InvestisseurClient({
       >
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div>
-            <Ligne libelle="Recette brute encaissée" detail={`${base.joursTravailles} jours travaillés`} montant={base.recetteBrute} signe="+" />
+            <Ligne
+              libelle="Recette brute encaissée"
+              detail={`${base.joursTravailles} jours travaillés — dont ${base.joursLocation} en location sans chauffeur`}
+              montant={base.recetteBrute} signe="+"
+            />
             <Ligne libelle="Carburant et frais quotidiens" detail="gazoil, parking, lavage, péage…" montant={base.depensesQuotidiennes} signe="-" />
             <Ligne libelle="Net remonté par le chauffeur" montant={base.netRemonte} total />
 
@@ -588,7 +657,11 @@ export default function InvestisseurClient({
 
             <Ligne
               libelle="Rémunération du chauffeur"
-              detail={`${fmt(chauffeurParJour)} F × ${base.joursTravailles} jours travaillés`}
+              detail={
+                base.joursLocation > 0
+                  ? `${fmt(chauffeurParJour)} F × ${base.joursAvecChauffeur} jours avec chauffeur — les ${base.joursLocation} jours de location sans chauffeur sont exclus`
+                  : `${fmt(chauffeurParJour)} F × ${base.joursAvecChauffeur} jours avec chauffeur`
+              }
               montant={compte.chauffeur} signe="-"
             />
             <Ligne
@@ -704,7 +777,7 @@ export default function InvestisseurClient({
           <table className="w-full text-sm font-figures">
             <thead>
               <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                {["Mois", "Jours", "Recette", "Frais quotidiens", "Chauffeur", "Charges fixes", "Net investisseur"].map((h) => (
+                {["Mois", "Jours chauffeur", "Jours location", "Recette", "Frais quotidiens", "Chauffeur", "Charges fixes", "Net investisseur"].map((h) => (
                   <th key={h} className="text-left px-5 sm:px-6 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)] whitespace-nowrap">
                     {h}
                   </th>
@@ -715,7 +788,8 @@ export default function InvestisseurClient({
               {moisDetail.map((m) => (
                 <tr key={m.key} className="border-t" style={{ borderColor: COLORS.line }}>
                   <td className="px-5 sm:px-6 py-2 font-sans capitalize whitespace-nowrap">{m.labelLong}</td>
-                  <td className="px-5 sm:px-6 py-2">{m.joursTravailles}</td>
+                  <td className="px-5 sm:px-6 py-2">{m.joursAvecChauffeur}</td>
+                  <td className="px-5 sm:px-6 py-2">{m.joursLocation}</td>
                   <td className="px-5 sm:px-6 py-2">{fmt(m.recette)}</td>
                   <td className="px-5 sm:px-6 py-2" style={{ color: COLORS.red }}>{fmt(m.depenses)}</td>
                   <td className="px-5 sm:px-6 py-2" style={{ color: COLORS.red }}>{fmt(m.chauffeur)}</td>
@@ -892,9 +966,13 @@ export default function InvestisseurClient({
             période, afin de ne pas gonfler les moyennes mensuelles.
           </li>
           <li>
-            <strong>Rémunération du chauffeur :</strong> {fmt(chauffeurParJour)} F par jour
-            effectivement travaillé. Elle n&apos;est pas prélevée sur la recette quotidienne mais
-            déduite ici, comme une charge de l&apos;investisseur.
+            <strong>Rémunération du chauffeur :</strong> {fmt(chauffeurParJour)} F par jour, et
+            uniquement les jours où un chauffeur FMB était au volant — soit{" "}
+            {base.joursAvecChauffeur} jours sur la période. Les {base.joursLocation} journées de
+            location sans chauffeur n&apos;entraînent aucun salaire : le client conduit et paie son
+            carburant, il ne remet qu&apos;un forfait. Ces journées sont marquées comme telles au
+            moment de la saisie. Cette rémunération n&apos;est pas prélevée sur la recette
+            quotidienne mais déduite ici, comme une charge de l&apos;investisseur.
           </li>
           <li>
             <strong>Entretien :</strong> {fmt(coutEntretien)} F tous les {entretienTousLesMois} mois,

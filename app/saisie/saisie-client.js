@@ -23,7 +23,7 @@ function Field({ label, children, hint }) {
 
 const emptyForm = (chauffeur, date) => ({
   date, receveur: chauffeur || "", recette: "", gazoil: "", gazoilNote: "Gazoil",
-  autres: "", autresNote: "", totalCaisse: "", net: "",
+  autres: "", autresNote: "", totalCaisse: "", net: "", sansChauffeur: false,
 });
 
 export default function SaisieClient({ vehicles }) {
@@ -104,6 +104,7 @@ export default function SaisieClient({ vehicles }) {
       gazoil: String(e.gazoil ?? ""), gazoilNote: e.gazoil_note || "",
       autres: String(e.autres ?? ""), autresNote: e.autres_note || "",
       totalCaisse: String(e.total_caisse ?? ""), net: String(e.net ?? ""),
+      sansChauffeur: e.sans_chauffeur === true,
     });
   };
 
@@ -273,6 +274,22 @@ export default function SaisieClient({ vehicles }) {
               <input type="number" className={inputClass + " font-semibold"} value={form.net} onChange={(e) => setForm({ ...form, net: e.target.value })} />
             </Field>
           </div>
+
+          {/* Sur une location sans chauffeur, aucun salaire n'est dû : le
+              dossier investisseur s'appuie sur ce marqueur. */}
+          <label className="flex items-start gap-2.5 mt-4 bg-[var(--bg-page)] rounded-lg px-4 py-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={form.sansChauffeur === true}
+              onChange={(e) => setForm({ ...form, sansChauffeur: e.target.checked })}
+            />
+            <span className="text-xs leading-relaxed text-[var(--text-slate)]">
+              <strong style={{ color: COLORS.ink }}>Location sans chauffeur</strong> — le client
+              conduit lui-même et paie son carburant. Aucun salaire de chauffeur n&apos;est compté
+              sur cette journée.
+            </span>
+          </label>
 
           <button
             onClick={onSave}
@@ -449,7 +466,18 @@ export default function SaisieClient({ vehicles }) {
               <tbody>
                 {recent.map((e) => (
                   <tr key={e.date} className="border-t" style={{ borderColor: COLORS.line, color: e.recette === 0 ? "var(--text-slate-light)" : COLORS.ink }}>
-                    <td className="px-5 py-2">{e.date}</td>
+                    <td className="px-5 py-2 whitespace-nowrap">
+                      {e.date}
+                      {e.sans_chauffeur && (
+                        <span
+                          className="ml-2 font-sans text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                          style={{ backgroundColor: "color-mix(in srgb, var(--fleet) 14%, transparent)", color: "var(--fleet)" }}
+                          title="Location sans chauffeur — aucun salaire compté"
+                        >
+                          LOCATION
+                        </span>
+                      )}
+                    </td>
                     <td className="px-5 py-2">{fmt(e.recette)}</td>
                     <td className="px-5 py-2">{fmt(e.gazoil)}</td>
                     <td className="px-5 py-2">{fmt(e.autres)}</td>
