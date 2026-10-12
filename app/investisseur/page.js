@@ -7,7 +7,12 @@ import InvestisseurClient from "./investisseur-client";
 
 export const dynamic = "force-dynamic";
 
+// Montant reellement investi dans le vehicule de reference. C'est le seul
+// vehicule disposant de donnees d'exploitation : tout le dossier est bati
+// sur ce montant, aussi bien pour le suivi du capital rembourse que pour le
+// ticket d'entree presente a un nouvel investisseur.
 const PRIX_ACHAT = Number(process.env.INVESTOR_PRIX_ACHAT) || 6500000;
+const PRIX_REFERENCE = Number(process.env.INVESTOR_PRIX_REFERENCE) || PRIX_ACHAT;
 const VEHICLE_IMMAT = process.env.INVESTOR_VEHICLE_IMMAT || "AB-449-JL";
 
 function Gate({ error }) {
@@ -96,16 +101,12 @@ export default async function InvestisseurPage({ searchParams }) {
     vehicles.find((v) => (v.marque || "").toUpperCase().includes("QM3")) ||
     vehicles[0];
 
-  const [entriesRes, avancesRes, flotteRes] = await Promise.all([
+  const [entriesRes, flotteRes] = await Promise.all([
     admin.from("entries").select("*").eq("vehicle_id", vehicle.id).order("date", { ascending: true }),
-    admin.from("avances").select("*").eq("vehicle_id", vehicle.id),
     admin.from("entries").select("vehicle_id,date,recette,net").order("date", { ascending: true }),
   ]);
 
   const entries = entriesRes.data || [];
-  const depensesImprevues = (avancesRes.data || [])
-    .filter((a) => a.type === "depense_imprevue")
-    .reduce((s, a) => s + (Number(a.montant) || 0), 0);
 
   if (!entries.length) {
     return <Message>Aucune donnée d&apos;exploitation disponible pour ce véhicule.</Message>;
@@ -146,8 +147,8 @@ export default async function InvestisseurPage({ searchParams }) {
     <InvestisseurClient
       vehicle={vehicle}
       entries={entries}
-      depensesImprevues={depensesImprevues}
       prixAchat={PRIX_ACHAT}
+      prixReference={PRIX_REFERENCE}
       aujourdhui={aujourdhui}
       flotte={flotte}
     />
