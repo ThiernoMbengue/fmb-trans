@@ -1,9 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Save, Trash2, Loader2, AlertCircle, HandCoins, TriangleAlert, Send, Check, X, Clock } from "lucide-react";
+import {
+  Save, Trash2, Loader2, AlertCircle, HandCoins, TriangleAlert, Send, Check, X, Clock,
+  CheckCircle2, RotateCcw,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { saveAvance, deleteAvance, requestAvance, cancelAvanceRequest, resolveAvanceRequest } from "./actions";
+import {
+  saveAvance, deleteAvance, setAvanceStatut,
+  requestAvance, cancelAvanceRequest, resolveAvanceRequest,
+} from "./actions";
 
 const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)", green: "var(--green)", red: "var(--red)", amber: "var(--amber)", line: "var(--border-line)" };
 const inputClass =
@@ -19,6 +25,18 @@ const TYPE_LABEL = {
 
 const STATUS_LABEL = { en_attente: "En attente", approuvee: "Approuvée", refusee: "Refusée" };
 const STATUS_COLOR = { en_attente: "amber", approuvee: "green", refusee: "red" };
+
+// Une ligne est « réglée » lorsqu'elle a déjà été prise en compte dans un
+// décompte mensuel soldé. Elle sort alors des sommes encore dues, mais reste
+// dans l'historique : c'est ce que la suppression ne permettait pas.
+const estReglee = (r) => r.statut === "regularisee";
+
+const MOIS_LONG = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+const fmtPeriode = (key) => {
+  if (!key) return "";
+  const [y, m] = key.split("-");
+  return `${MOIS_LONG[Number(m) - 1]} ${y}`;
+};
 
 function Field({ label, children }) {
   return (
@@ -81,12 +99,52 @@ export default function AvancesClient({ vehicles, role }) {
   };
 
   const onDelete = async (id) => {
+    if (!confirm("Supprimer définitivement cette ligne ?\n\nPour une avance déjà récupérée, préférez « Marquer réglée » : la trace de l'argent remis est conservée.")) return;
     setSaving(true);
     const res = await deleteAvance(id);
     setSaving(false);
     if (res?.error) showToast("Erreur: " + res.error, "error");
     else {
       showToast("Supprimé");
+      await loadRows(vehicleId);
+    }
+  };
+
+  const onToggleStatut = async (row) => {
+    const vers = estReglee(row) ? "en_cours" : "regularisee";
+
+    if (vers === "regularisee" && row.statut !== "regularisee") {
+      const note = prompt(
+        "Marquer cette ligne comme réglée.\n\n" +
+        "Comment a-t-elle été récupérée ? (facultatif)\n" +
+        "Ex : rendue en espèces, compensée, abandonnée…",
+        ""
+      );
+      // prompt renvoie null si l'utilisateur annule.
+      if (note === null) return;
+      setSaving(true);
+      const res = await setAvanceStatut(row.id, vers, note);
+      setSaving(false);
+      if (res?.error) showToast("Erreur: " + res.error, "error");
+      else {
+        showToast("Marquée comme réglée");
+        await loadRows(vehicleId);
+      }
+      return;
+    }
+
+    if (row.regularisee_auto && !confirm(
+      "Cette ligne a été réglée automatiquement par le paiement de " +
+      fmtPeriode(row.regularisee_periode) + ".\n\n" +
+      "La rouvrir manuellement sera annulé au prochain enregistrement de paiement. Continuer ?"
+    )) return;
+
+    setSaving(true);
+    const res = await setAvanceStatut(row.id, vers);
+    setSaving(false);
+    if (res?.error) showToast("Erreur: " + res.error, "error");
+    else {
+      showToast("Remise en cours");
       await loadRows(vehicleId);
     }
   };
@@ -128,11 +186,26 @@ export default function AvancesClient({ vehicles, role }) {
   };
 
   const totals = useMemo(() => {
-    const avance = rows.filter((r) => r.type === "avance_proprietaire").reduce((s, r) => s + (Number(r.montant) || 0), 0);
-    const depense = rows.filter((r) => r.type === "depense_imprevue").reduce((s, r) => s + (Number(r.montant) || 0), 0);
-    const rembourse = rows.filter((r) => r.type === "remboursement").reduce((s, r) => s + (Number(r.montant) || 0), 0);
-    const soldeDu = avance + depense - rembourse;
-    return { avance, depense, rembourse, soldeDu };
+    const somme = (liste, type) =>
+      liste.filter((r) => r.type === type).reduce((s, r) => s + (Number(r.montant) || 0), 0);
+
+    // Seules les lignes encore en cours constituent ce qui reste dû : une
+    // ligne réglée a déjà été récupérée sur un paiement.
+    const enCours = rows.filter((r) => !estReglee(r));
+    const reglees = rows.filter(estReglee);
+
+    const avance = somme(enCours, "avance_proprietaire");
+    const depense = somme(enCours, "depense_imprevue");
+    const rembourse = somme(enCours, "remboursement");
+
+    return {
+      avance,
+      depense,
+      rembourse,
+      soldeDu: avance + depense - rembourse,
+      regle: somme(reglees, "avance_proprietaire") + somme(reglees, "depense_imprevue"),
+      nbReglees: reglees.length,
+    };
   }, [rows]);
 
   if (!vehicles.length) {
@@ -179,13 +252,14 @@ export default function AvancesClient({ vehicles, role }) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
           <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: COLORS.fleet }} />
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
             <HandCoins size={14} color={COLORS.fleet} /> Avances au propriétaire
           </div>
           <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: COLORS.ink }}>{fmt(totals.avance)} F</div>
+          <div className="pl-2 text-[10px] text-[var(--text-slate-light)] mt-0.5">pas encore récupérées</div>
         </div>
         <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
           <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: COLORS.amber }} />
@@ -197,9 +271,35 @@ export default function AvancesClient({ vehicles, role }) {
         <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
           <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: COLORS.green }} />
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
-            Solde net dû au gestionnaire
+            Reste à récupérer
           </div>
           <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: COLORS.ink }}>{fmt(totals.soldeDu)} F</div>
+          <div className="pl-2 text-[10px] text-[var(--text-slate-light)] mt-0.5">lignes en cours uniquement</div>
+        </div>
+        <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
+          <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: "var(--text-slate-light)" }} />
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
+            <CheckCircle2 size={14} color="var(--text-slate-light)" /> Déjà réglé
+          </div>
+          <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: "var(--text-slate)" }}>{fmt(totals.regle)} F</div>
+          <div className="pl-2 text-[10px] text-[var(--text-slate-light)] mt-0.5">
+            {totals.nbReglees} ligne{totals.nbReglees > 1 ? "s" : ""} récupérée{totals.nbReglees > 1 ? "s" : ""}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-6 border text-xs leading-relaxed text-[var(--text-slate)]"
+        style={{
+          borderColor: "color-mix(in srgb, var(--fleet) 30%, transparent)",
+          backgroundColor: "color-mix(in srgb, var(--fleet) 6%, transparent)",
+        }}
+      >
+        <CheckCircle2 size={15} color={COLORS.fleet} className="mt-0.5 shrink-0" />
+        <div>
+          <strong style={{ color: COLORS.ink }}>Une ligne réglée sort des sommes dues, mais reste dans l&apos;historique.</strong>{" "}
+          Lorsqu&apos;un décompte mensuel est soldé dans l&apos;onglet Paiements, les avances qu&apos;il
+          couvrait passent automatiquement en « réglée ». Le marquage manuel sert aux cas réglés
+          autrement : rendus en espèces, compensés, abandonnés.
         </div>
       </div>
 
@@ -350,14 +450,18 @@ export default function AvancesClient({ vehicles, role }) {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                  {["Date", "Type", "Montant", "Note", ...(isAdmin ? [""] : [])].map((h) => (
+                  {["Date", "Type", "Montant", "Statut", "Note", ...(isAdmin ? [""] : [])].map((h) => (
                     <th key={h} className="text-left px-5 py-2.5 font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id} className="border-t" style={{ borderColor: COLORS.line }}>
+                  <tr
+                    key={r.id}
+                    className="border-t"
+                    style={{ borderColor: COLORS.line, opacity: estReglee(r) ? 0.55 : 1 }}
+                  >
                     <td className="px-5 py-2 font-mono">{r.date}</td>
                     <td className="px-5 py-2">
                       <span
@@ -373,10 +477,54 @@ export default function AvancesClient({ vehicles, role }) {
                       </span>
                     </td>
                     <td className="px-5 py-2 font-mono font-semibold">{fmt(r.montant)} F</td>
+                    <td className="px-5 py-2 whitespace-nowrap">
+                      {estReglee(r) ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: "rgba(30,122,95,0.12)", color: COLORS.green }}
+                          title={
+                            r.regularisee_auto
+                              ? `Réglée par le paiement de ${fmtPeriode(r.regularisee_periode)}`
+                              : r.regularisee_note || "Réglée manuellement"
+                          }
+                        >
+                          <CheckCircle2 size={12} /> Réglée
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[var(--text-slate-light)]">En cours</span>
+                      )}
+                      {estReglee(r) && (
+                        <div className="text-[10px] text-[var(--text-slate-light)] mt-0.5">
+                          {r.regularisee_auto
+                            ? `paiement ${fmtPeriode(r.regularisee_periode)}`
+                            : r.regularisee_note || "manuel"}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-5 py-2 text-[var(--text-slate)]">{r.note}</td>
                     {isAdmin && (
                       <td className="px-5 py-2">
-                        <button onClick={() => onDelete(r.id)} className="text-[var(--text-slate-light)] hover:text-[var(--red)]"><Trash2 size={14} /></button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => onToggleStatut(r)}
+                            disabled={saving}
+                            title={estReglee(r) ? "Remettre en cours" : "Marquer comme réglée"}
+                            className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg border whitespace-nowrap disabled:opacity-50"
+                            style={{
+                              borderColor: COLORS.line,
+                              color: estReglee(r) ? "var(--text-slate)" : COLORS.green,
+                            }}
+                          >
+                            {estReglee(r) ? <><RotateCcw size={12} /> Rouvrir</> : <><Check size={12} /> Réglée</>}
+                          </button>
+                          <button
+                            onClick={() => onDelete(r.id)}
+                            title="Supprimer définitivement"
+                            className="text-[var(--text-slate-light)] hover:text-[var(--red)]"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>

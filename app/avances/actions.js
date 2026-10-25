@@ -32,8 +32,65 @@ export async function deleteAvance(id) {
   if (error) return { error: error.message };
 
   revalidatePath("/avances");
+  revalidatePath("/paiements");
   revalidatePath("/");
   return { success: true };
+}
+
+/**
+ * Marque une avance comme réglée, ou la remet en cours.
+ *
+ * Le marquage posé ici est manuel : il sert aux avances récupérées en dehors
+ * des décomptes — rendues en espèces, compensées, abandonnées. Il n'est
+ * jamais défait automatiquement, contrairement à celui que pose le règlement
+ * d'un décompte.
+ *
+ * Le décompte du mois de l'avance n'est pas modifié : il reste le relevé
+ * historique de ce qui a été déduit ce mois-là.
+ */
+export async function setAvanceStatut(id, statut, note) {
+  try {
+    const supabase = createClient();
+
+    if (!["en_cours", "regularisee"].includes(statut)) {
+      return { error: "Statut inconnu" };
+    }
+
+    const champs =
+      statut === "regularisee"
+        ? {
+            statut,
+            regularisee_le: new Date().toISOString().slice(0, 10),
+            regularisee_periode: null,
+            regularisee_auto: false,
+            regularisee_note: note || null,
+          }
+        : {
+            statut,
+            regularisee_le: null,
+            regularisee_periode: null,
+            regularisee_auto: false,
+            regularisee_note: null,
+          };
+
+    const { error } = await supabase.from("avances").update(champs).eq("id", id);
+    if (error) {
+      if (/statut|regularisee/i.test(error.message || "")) {
+        return {
+          error:
+            "La migration migration_avances_statut.sql n'a pas encore ete executee dans Supabase.",
+        };
+      }
+      return { error: error.message };
+    }
+
+    revalidatePath("/avances");
+    revalidatePath("/paiements");
+    revalidatePath("/");
+    return { success: true };
+  } catch (e) {
+    return { error: e?.message || "Erreur inattendue" };
+  }
 }
 
 export async function requestAvance(payload) {

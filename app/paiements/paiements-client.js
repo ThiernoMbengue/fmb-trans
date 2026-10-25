@@ -6,8 +6,9 @@ import {
   CheckCircle2, Clock, CircleAlert, Bus, Receipt,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { savePaiement, deletePaiement } from "./actions";
+import { savePaiement, deletePaiement, resynchroniserAvances } from "./actions";
 import { generateRecuPDF } from "@/lib/pdf/report";
+import { construireDecomptes } from "@/lib/decomptes";
 
 const COLORS = {
   ink: "var(--text-ink)", fleet: "var(--fleet-bright)", amber: "var(--amber)",
@@ -15,7 +16,6 @@ const COLORS = {
   slate: "var(--text-slate)", line: "var(--border-line)",
 };
 
-const MONTHS_LONG = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 
 const MODES = [
   { id: "especes", label: "Espèces" },
@@ -49,11 +49,6 @@ const fmt = (n) => {
   return (neg ? "-" : "") + out;
 };
 const todayISO = () => new Date().toISOString().slice(0, 10);
-const moisCourant = () => new Date().toISOString().slice(0, 7);
-const fmtPeriode = (key) => {
-  const [y, m] = key.split("-");
-  return `${MONTHS_LONG[Number(m) - 1]} ${y}`;
-};
 
 function Field({ label, children }) {
   return (
@@ -98,61 +93,6 @@ function SummaryCard({ icon: Icon, label, value, caption, accent }) {
   );
 }
 
-// Construit les décomptes mensuels d'un véhicule, avec report du solde d'un mois sur l'autre
-function construireDecomptes(vehicleId, entries, avances, paiements) {
-  const mois = new Set();
-  const add = (d) => d && mois.add(d.slice(0, 7));
-
-  const e = entries.filter((r) => r.vehicle_id === vehicleId);
-  const a = avances.filter((r) => r.vehicle_id === vehicleId);
-  const p = paiements.filter((r) => r.vehicle_id === vehicleId);
-
-  e.forEach((r) => add(r.date));
-  a.forEach((r) => add(r.date));
-  p.forEach((r) => mois.add(r.periode));
-
-  const cles = [...mois].sort();
-  let report = 0;
-
-  return cles.map((periode) => {
-    const som = (rows, f) => rows.filter((r) => (r.periode || r.date).slice(0, 7) === periode).reduce((s, r) => s + f(r), 0);
-
-    const netMois = som(e, (r) => Number(r.net) || 0);
-    const avancesMois = som(a.filter((r) => r.type === "avance_proprietaire"), (r) => Number(r.montant) || 0);
-    const depensesMois = som(a.filter((r) => r.type === "depense_imprevue"), (r) => Number(r.montant) || 0);
-    const remboursMois = som(a.filter((r) => r.type === "remboursement"), (r) => Number(r.montant) || 0);
-
-    const netAPayer = netMois - avancesMois - depensesMois + remboursMois;
-    const paiementsMois = p.filter((r) => r.periode === periode).sort((x, y) => x.date_paiement.localeCompare(y.date_paiement));
-    const paye = paiementsMois.reduce((s, r) => s + (Number(r.montant) || 0), 0);
-
-    const reportEntrant = report;
-    const solde = reportEntrant + netAPayer - paye;
-    report = solde;
-
-    let statut;
-    if (periode === moisCourant()) statut = "en_cours";
-    else if (solde <= 0) statut = "solde";
-    else if (paye > 0) statut = "partiel";
-    else statut = "a_payer";
-
-    return {
-      periode,
-      periodeLabel: fmtPeriode(periode),
-      report: reportEntrant,
-      netMois,
-      avances: avancesMois,
-      depenses: depensesMois,
-      remboursements: remboursMois,
-      netAPayer,
-      paiements: paiementsMois,
-      paye,
-      solde,
-      statut,
-    };
-  });
-}
-
 export default function PaiementsClient({ vehicles, role }) {
   const isAdmin = role === "admin";
   const supabase = createClient();
@@ -176,7 +116,7 @@ export default function PaiementsClient({ vehicles, role }) {
     setLoading(true);
     const [e, a, p] = await Promise.all([
       supabase.from("entries").select("vehicle_id,date,net"),
-      supabase.from("avances").select("vehicle_id,date,type,montant"),
+      supabase.from("avances").select("vehicle_id,date,type,montant,statut"),
       supabase.from("paiements").select("*").order("date_paiement", { ascending: true }),
     ]);
     if (!e.error) setEntries(e.data || []);
@@ -186,7 +126,17 @@ export default function PaiementsClient({ vehicles, role }) {
   };
 
   useEffect(() => {
-    charger();
+    (async () => {
+      // Rattrapage de l'historique : les avances déjà couvertes par un
+      // décompte soldé passent en « réglées », même si le paiement est
+      // ancien. L'opération est idempotente, la rejouer ne change rien.
+      if (isAdmin) {
+        await Promise.all(
+          vehicles.map((v) => resynchroniserAvances(v.id).catch(() => null))
+        );
+      }
+      await charger();
+    })();
   }, []); // eslint-disable-line
 
   // Solde de chaque véhicule : c'est la vue « qui je dois payer »
@@ -458,6 +408,19 @@ export default function PaiementsClient({ vehicles, role }) {
                       <span className="font-sans" style={{ color: COLORS.ink }}>Net à payer</span>
                       <span style={{ color: COLORS.ink }}>{fmt(d.netAPayer)} F</span>
                     </div>
+
+                    {/* Une fois le mois soldé, les avances qu'il couvrait sont
+                        récupérées : elles basculent toutes seules côté Avances. */}
+                    {d.statut === "solde" && d.avances + d.depenses > 0 && (
+                      <div className="flex items-start gap-2 mt-2 text-[11px] font-sans leading-relaxed text-[var(--text-slate)]">
+                        <CheckCircle2 size={13} color={COLORS.green} className="mt-0.5 shrink-0" />
+                        <span>
+                          Les {fmt(d.avances + d.depenses)} F d&apos;avances et dépenses de ce mois sont
+                          récupérés : ils sont marqués « réglés » dans l&apos;onglet Avances et ne
+                          comptent plus dans les sommes dues.
+                        </span>
+                      </div>
+                    )}
 
                     {d.paiements.length > 0 && (
                       <div className="mt-2 pt-2 border-t" style={{ borderColor: COLORS.line }}>
