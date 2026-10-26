@@ -298,8 +298,10 @@ export default function AvancesClient({ vehicles, role }) {
         <div>
           <strong style={{ color: COLORS.ink }}>Une ligne réglée sort des sommes dues, mais reste dans l&apos;historique.</strong>{" "}
           Lorsqu&apos;un décompte mensuel est soldé dans l&apos;onglet Paiements, les avances qu&apos;il
-          couvrait passent automatiquement en « réglée ». Le marquage manuel sert aux cas réglés
-          autrement : rendus en espèces, compensés, abandonnés.
+          couvrait passent automatiquement en « réglée ». Une avance qui dépasse ce que le mois
+          pouvait absorber reste « en cours » jusqu&apos;à ce que les mois suivants l&apos;aient
+          couverte — l&apos;onglet Paiements indique alors le montant restant. Le marquage manuel
+          sert aux cas réglés autrement : rendus en espèces, compensés, abandonnés.
         </div>
       </div>
 

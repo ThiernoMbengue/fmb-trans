@@ -8,7 +8,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { savePaiement, deletePaiement, resynchroniserAvances } from "./actions";
 import { generateRecuPDF } from "@/lib/pdf/report";
-import { construireDecomptes } from "@/lib/decomptes";
+import { construireDecomptes, avancesNonAbsorbees } from "@/lib/decomptes";
 
 const COLORS = {
   ink: "var(--text-ink)", fleet: "var(--fleet-bright)", amber: "var(--amber)",
@@ -153,6 +153,8 @@ export default function PaiementsClient({ vehicles, role }) {
           totalPaye: d.reduce((s, x) => s + x.paye, 0),
           totalDu: d.reduce((s, x) => s + x.netAPayer, 0),
           moisARegler: aRegler,
+          // Part des avances que les versements n'ont pas encore absorbée.
+          nonAbsorbe: avancesNonAbsorbees(d),
         };
       }),
     [vehicles, entries, avances, paiements]
@@ -318,6 +320,27 @@ export default function PaiementsClient({ vehicles, role }) {
             </div>
           )}
 
+          {/* Avances pas encore récupérées par les versements */}
+          {courant?.nonAbsorbe > 0 && (
+            <div
+              className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-4 border text-xs leading-relaxed text-[var(--text-slate)]"
+              style={{
+                borderColor: `color-mix(in srgb, ${COLORS.amber} 35%, transparent)`,
+                backgroundColor: `color-mix(in srgb, ${COLORS.amber} 7%, transparent)`,
+              }}
+            >
+              <CircleAlert size={15} color={COLORS.amber} className="mt-0.5 shrink-0" />
+              <div>
+                <strong className="text-[var(--text-ink)]">
+                  {fmt(courant.nonAbsorbe)} F d&apos;avances pas encore récupérés
+                </strong>{" "}
+                sur ce véhicule. Les versements n&apos;ont pas encore dégagé assez de net pour les
+                couvrir : le reliquat se reporte de mois en mois, et les avances concernées restent
+                « en cours » dans l&apos;onglet Avances jusqu&apos;à ce qu&apos;il soit absorbé.
+              </div>
+            </div>
+          )}
+
           {/* Sélecteur de véhicule */}
           <div className="flex items-center gap-2.5 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl px-3 py-2 mb-4 w-fit max-w-full">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 16%, transparent)" }}>
@@ -409,9 +432,23 @@ export default function PaiementsClient({ vehicles, role }) {
                       <span style={{ color: COLORS.ink }}>{fmt(d.netAPayer)} F</span>
                     </div>
 
+                    {/* Les avances dépassent le net du mois : le reliquat part
+                        sur le mois suivant, et l'avance n'est pas récupérée. */}
+                    {d.netAPayer < 0 && (
+                      <div className="flex items-start gap-2 mt-2 text-[11px] font-sans leading-relaxed text-[var(--text-slate)]">
+                        <CircleAlert size={13} color={COLORS.amber} className="mt-0.5 shrink-0" />
+                        <span>
+                          Les avances et dépenses de ce mois dépassent le net des versements de{" "}
+                          <strong style={{ color: COLORS.ink }}>{fmt(-d.netAPayer)} F</strong>. Ce reliquat
+                          est reporté sur le mois suivant : les avances concernées restent « en cours »
+                          tant qu&apos;il n&apos;est pas absorbé.
+                        </span>
+                      </div>
+                    )}
+
                     {/* Une fois le mois soldé, les avances qu'il couvrait sont
                         récupérées : elles basculent toutes seules côté Avances. */}
-                    {d.statut === "solde" && d.avances + d.depenses > 0 && (
+                    {d.statut === "solde" && d.netAPayer >= 0 && d.avances + d.depenses > 0 && (
                       <div className="flex items-start gap-2 mt-2 text-[11px] font-sans leading-relaxed text-[var(--text-slate)]">
                         <CheckCircle2 size={13} color={COLORS.green} className="mt-0.5 shrink-0" />
                         <span>
