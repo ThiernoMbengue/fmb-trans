@@ -6,9 +6,10 @@ import {
   CheckCircle2, Clock, CircleAlert, Bus, Receipt,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { savePaiement, deletePaiement, resynchroniserAvances } from "./actions";
+import { savePaiement, deletePaiement } from "./actions";
 import { generateRecuPDF } from "@/lib/pdf/report";
 import { construireDecomptes, avancesNonAbsorbees } from "@/lib/decomptes";
+import { lireTout } from "@/lib/supabase/lire-tout";
 
 const COLORS = {
   ink: "var(--text-ink)", fleet: "var(--fleet-bright)", amber: "var(--amber)",
@@ -114,10 +115,12 @@ export default function PaiementsClient({ vehicles, role }) {
 
   const charger = async () => {
     setLoading(true);
+    // Lecture paginée : au-delà de 1 000 lignes, l'API tronque sans rien
+    // dire, et le décompte serait calculé sur un historique incomplet.
     const [e, a, p] = await Promise.all([
-      supabase.from("entries").select("vehicle_id,date,net"),
-      supabase.from("avances").select("vehicle_id,date,type,montant,statut,regularisee_auto"),
-      supabase.from("paiements").select("*").order("date_paiement", { ascending: true }),
+      lireTout(() => supabase.from("entries").select("vehicle_id,date,net")),
+      lireTout(() => supabase.from("avances").select("vehicle_id,date,type,montant,statut,regularisee_auto")),
+      lireTout(() => supabase.from("paiements").select("*").order("date_paiement", { ascending: true })),
     ]);
     if (!e.error) setEntries(e.data || []);
     if (!a.error) setAvances(a.data || []);
@@ -125,18 +128,10 @@ export default function PaiementsClient({ vehicles, role }) {
     setLoading(false);
   };
 
+  // Le rattrapage du statut des avances se fait côté serveur, dans page.js,
+  // avant même que cette page ne soit rendue : il n'y a plus qu'à charger.
   useEffect(() => {
-    (async () => {
-      // Rattrapage de l'historique : les avances déjà couvertes par un
-      // décompte soldé passent en « réglées », même si le paiement est
-      // ancien. L'opération est idempotente, la rejouer ne change rien.
-      if (isAdmin) {
-        await Promise.all(
-          vehicles.map((v) => resynchroniserAvances(v.id).catch(() => null))
-        );
-      }
-      await charger();
-    })();
+    charger();
   }, []); // eslint-disable-line
 
   // Solde de chaque véhicule : c'est la vue « qui je dois payer »

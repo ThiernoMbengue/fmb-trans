@@ -22,6 +22,14 @@ async function synchroniserAvances(supabase, vehicleId) {
   }
 }
 
+// Seule la page Avances est revalidée. Revalider /paiements relancerait un
+// rendu complet de cette page — donc un second rattrapage, inutile puisque
+// le véhicule concerné vient d'être traité, et le navigateur recharge ses
+// données tout seul juste après.
+function rafraichir() {
+  revalidatePath("/avances");
+}
+
 export async function savePaiement(payload) {
   try {
     const supabase = createClient();
@@ -51,8 +59,7 @@ export async function savePaiement(payload) {
     // récupérées : elles ne doivent plus figurer parmi les sommes dues.
     const suite = await synchroniserAvances(supabase, payload.vehicleId);
 
-    revalidatePath("/paiements");
-    revalidatePath("/avances");
+    rafraichir();
     return { success: true, ...suite };
   } catch (e) {
     return { error: e?.message || "Erreur inattendue" };
@@ -80,26 +87,8 @@ export async function deletePaiement(id) {
       ? await synchroniserAvances(supabase, paiement.vehicle_id)
       : {};
 
-    revalidatePath("/paiements");
-    revalidatePath("/avances");
+    rafraichir();
     return { success: true, ...suite };
-  } catch (e) {
-    return { error: e?.message || "Erreur inattendue" };
-  }
-}
-
-/** Relance l'alignement des avances sur les paiements, sans rien enregistrer. */
-export async function resynchroniserAvances(vehicleId) {
-  try {
-    const supabase = createClient();
-    if (!(await assertAdmin(supabase))) return { error: "Accès refusé" };
-
-    const res = await reconcilierAvances(supabase, vehicleId);
-    if (res?.error) return { error: res.error };
-
-    revalidatePath("/paiements");
-    revalidatePath("/avances");
-    return { success: true, ...res };
   } catch (e) {
     return { error: e?.message || "Erreur inattendue" };
   }
