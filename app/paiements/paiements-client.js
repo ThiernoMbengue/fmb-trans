@@ -116,7 +116,7 @@ export default function PaiementsClient({ vehicles, role }) {
     setLoading(true);
     const [e, a, p] = await Promise.all([
       supabase.from("entries").select("vehicle_id,date,net"),
-      supabase.from("avances").select("vehicle_id,date,type,montant,statut"),
+      supabase.from("avances").select("vehicle_id,date,type,montant,statut,regularisee_auto"),
       supabase.from("paiements").select("*").order("date_paiement", { ascending: true }),
     ]);
     if (!e.error) setEntries(e.data || []);

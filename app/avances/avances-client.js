@@ -115,9 +115,11 @@ export default function AvancesClient({ vehicles, role }) {
 
     if (vers === "regularisee" && row.statut !== "regularisee") {
       const note = prompt(
-        "Marquer cette ligne comme réglée.\n\n" +
-        "Comment a-t-elle été récupérée ? (facultatif)\n" +
-        "Ex : rendue en espèces, compensée, abandonnée…",
+        "Marquer cette ligne comme réglée à la main.\n\n" +
+        "Elle sera RETIRÉE des décomptes mensuels et cessera d'être déduite\n" +
+        "des paiements. Les mois concernés seront recalculés.\n\n" +
+        "Comment a-t-elle été réglée ? (facultatif)\n" +
+        "Ex : rendue en espèces, compensée, abandonnée, saisie par erreur…",
         ""
       );
       // prompt renvoie null si l'utilisateur annule.
@@ -297,11 +299,22 @@ export default function AvancesClient({ vehicles, role }) {
         <CheckCircle2 size={15} color={COLORS.fleet} className="mt-0.5 shrink-0" />
         <div>
           <strong style={{ color: COLORS.ink }}>Une ligne réglée sort des sommes dues, mais reste dans l&apos;historique.</strong>{" "}
-          Lorsqu&apos;un décompte mensuel est soldé dans l&apos;onglet Paiements, les avances qu&apos;il
-          couvrait passent automatiquement en « réglée ». Une avance qui dépasse ce que le mois
-          pouvait absorber reste « en cours » jusqu&apos;à ce que les mois suivants l&apos;aient
-          couverte — l&apos;onglet Paiements indique alors le montant restant. Le marquage manuel
-          sert aux cas réglés autrement : rendus en espèces, compensés, abandonnés.
+          Il y a deux façons d&apos;y arriver, et elles n&apos;ont pas le même effet sur les décomptes.
+          <div className="mt-2 flex flex-col gap-1.5">
+            <div>
+              <strong style={{ color: COLORS.green }}>Automatique</strong> — quand un décompte mensuel
+              est soldé dans Paiements, les avances qu&apos;il couvrait basculent toutes seules. Elles
+              <strong> restent dans le décompte</strong> : c&apos;est lui qui les a justement récupérées.
+              Une avance qui dépasse ce que le mois pouvait absorber reste « en cours » jusqu&apos;à ce
+              que les mois suivants l&apos;aient couverte.
+            </div>
+            <div>
+              <strong style={{ color: COLORS.amber }}>Manuel</strong> — pour une somme réglée en dehors
+              du circuit mensuel : rendue en espèces, compensée, abandonnée, ou saisie par erreur. Elle
+              <strong> sort du décompte</strong> et cesse d&apos;être déduite des paiements. Les mois
+              concernés sont recalculés.
+            </div>
+          </div>
         </div>
       </div>
 
@@ -497,9 +510,16 @@ export default function AvancesClient({ vehicles, role }) {
                       )}
                       {estReglee(r) && (
                         <div className="text-[10px] text-[var(--text-slate-light)] mt-0.5">
-                          {r.regularisee_auto
-                            ? `paiement ${fmtPeriode(r.regularisee_periode)}`
-                            : r.regularisee_note || "manuel"}
+                          {r.regularisee_auto ? (
+                            `paiement ${fmtPeriode(r.regularisee_periode)}`
+                          ) : (
+                            <>
+                              {r.regularisee_note || "réglée à la main"}
+                              <span className="block" style={{ color: COLORS.amber }}>
+                                retirée des décomptes
+                              </span>
+                            </>
+                          )}
                         </div>
                       )}
                     </td>
