@@ -3,14 +3,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
-// La colonne sans_chauffeur est ajoutée par migration_location.sql. Tant que
-// celle-ci n'a pas été exécutée, on réenregistre sans elle plutôt que de
-// bloquer la saisie : le dossier investisseur sait retomber sur la détection
-// par les montants.
+// Deux colonnes arrivent par migration : sans_chauffeur (migration_location)
+// et note (migration_note_saisie). Tant qu'une migration n'a pas été exécutée,
+// on réenregistre sans ces colonnes plutôt que de bloquer la saisie — mieux
+// vaut une remarque perdue qu'un versement qu'on ne peut pas enregistrer.
 async function upsertEntries(supabase, rows) {
   let { error } = await supabase.from("entries").upsert(rows, { onConflict: "vehicle_id,date" });
-  if (error && /sans_chauffeur/i.test(error.message || "")) {
-    const sansColonne = rows.map(({ sans_chauffeur, ...reste }) => reste);
+  if (error && /sans_chauffeur|"?note"?/i.test(error.message || "")) {
+    const sansColonne = rows.map(({ sans_chauffeur, note, ...reste }) => reste);
     ({ error } = await supabase.from("entries").upsert(sansColonne, { onConflict: "vehicle_id,date" }));
   }
   return error;
@@ -34,6 +34,7 @@ export async function saveEntry(payload) {
     total_caisse: Number(payload.totalCaisse) || 0,
     net: Number(payload.net) || 0,
     sans_chauffeur: payload.sansChauffeur === true,
+    note: payload.note || null,
     created_by: user?.id,
   };
 
@@ -77,7 +78,8 @@ export async function saveLocationRange(payload) {
     gazoil: 0,
     gazoil_note: "",
     autres: 0,
-    autres_note: note || "Location",
+    autres_note: "",
+    note: note || "Location",
     total_caisse: amount,
     net: amount,
     // Une location à montant fixe est par définition une location sans

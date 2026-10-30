@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Save, Pencil, Trash2, X, Loader2, AlertCircle, CalendarSearch, Repeat, CalendarRange } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Save, Pencil, Trash2, X, Loader2, AlertCircle, CalendarSearch, Repeat, CalendarRange, MessageSquareText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { saveEntry, deleteEntry, saveLocationRange } from "./actions";
 
@@ -23,7 +23,7 @@ function Field({ label, children, hint }) {
 
 const emptyForm = (chauffeur, date) => ({
   date, receveur: chauffeur || "", recette: "", gazoil: "", gazoilNote: "Gazoil",
-  autres: "", autresNote: "", totalCaisse: "", net: "", sansChauffeur: false,
+  autres: "", autresNote: "", totalCaisse: "", net: "", sansChauffeur: false, note: "",
 });
 
 export default function SaisieClient({ vehicles }) {
@@ -38,6 +38,8 @@ export default function SaisieClient({ vehicles }) {
   const [form, setForm] = useState(null);
   const [editingDate, setEditingDate] = useState(null);
   const [searchDate, setSearchDate] = useState("");
+  // Date de la ligne dont la remarque est dépliée, ou null.
+  const [noteOuverte, setNoteOuverte] = useState(null);
 
   const [locOpen, setLocOpen] = useState(false);
   const [locDebut, setLocDebut] = useState("");
@@ -105,6 +107,7 @@ export default function SaisieClient({ vehicles }) {
       autres: String(e.autres ?? ""), autresNote: e.autres_note || "",
       totalCaisse: String(e.total_caisse ?? ""), net: String(e.net ?? ""),
       sansChauffeur: e.sans_chauffeur === true,
+      note: e.note || "",
     });
   };
 
@@ -275,6 +278,21 @@ export default function SaisieClient({ vehicles }) {
             </Field>
           </div>
 
+          <div className="mt-4">
+            <Field
+              label="Remarque sur la journée"
+              hint="Facultatif — ce qui explique la journée : panne, retard, client particulier, recette inhabituelle. Visible depuis le tableau de bord."
+            >
+              <textarea
+                rows={3}
+                className={inputClass + " resize-y min-h-[70px]"}
+                value={form.note}
+                onChange={(e) => setForm({ ...form, note: e.target.value })}
+                placeholder="Ex : crevaison à Yeumbeul, immobilisé 3 h — recette plus faible que d'habitude"
+              />
+            </Field>
+          </div>
+
           {/* Sur une location sans chauffeur, aucun salaire n'est dû : le
               dossier investisseur s'appuie sur ce marqueur. */}
           <label className="flex items-start gap-2.5 mt-4 bg-[var(--bg-page)] rounded-lg px-4 py-3 cursor-pointer">
@@ -439,6 +457,12 @@ export default function SaisieClient({ vehicles }) {
                 </tr>
               </tbody>
             </table>
+            {searchResult.note && (
+              <div className="flex items-start gap-2 mt-3 pt-3 border-t text-xs leading-relaxed text-[var(--text-slate)] whitespace-pre-wrap" style={{ borderColor: COLORS.line }}>
+                <MessageSquareText size={14} color={COLORS.fleet} className="mt-0.5 shrink-0" />
+                {searchResult.note}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -465,7 +489,8 @@ export default function SaisieClient({ vehicles }) {
               </thead>
               <tbody>
                 {recent.map((e) => (
-                  <tr key={e.date} className="border-t" style={{ borderColor: COLORS.line, color: e.recette === 0 ? "var(--text-slate-light)" : COLORS.ink }}>
+                  <Fragment key={e.date}>
+                  <tr className="border-t" style={{ borderColor: COLORS.line, color: e.recette === 0 ? "var(--text-slate-light)" : COLORS.ink }}>
                     <td className="px-5 py-2 whitespace-nowrap">
                       {e.date}
                       {e.sans_chauffeur && (
@@ -484,11 +509,32 @@ export default function SaisieClient({ vehicles }) {
                     <td className="px-5 py-2 font-semibold">{fmt(e.net)}</td>
                     <td className="px-5 py-2">
                       <div className="flex items-center gap-2 font-sans">
+                        {e.note && (
+                          <button
+                            onClick={() => setNoteOuverte(noteOuverte === e.date ? null : e.date)}
+                            title="Voir la remarque"
+                            className="hover:opacity-70"
+                            style={{ color: noteOuverte === e.date ? COLORS.fleet : "var(--text-slate-light)" }}
+                          >
+                            <MessageSquareText size={14} />
+                          </button>
+                        )}
                         <button onClick={() => startEdit(e)} className="text-[var(--text-slate-light)] hover:text-[var(--fleet)]"><Pencil size={14} /></button>
                         <button onClick={() => onDelete(e.date)} className="text-[var(--text-slate-light)] hover:text-[var(--red)]"><Trash2 size={14} /></button>
                       </div>
                     </td>
                   </tr>
+                  {e.note && noteOuverte === e.date && (
+                    <tr style={{ backgroundColor: "var(--bg-page)" }}>
+                      <td colSpan={6} className="px-5 py-3">
+                        <div className="flex items-start gap-2 font-sans text-xs leading-relaxed text-[var(--text-slate)] whitespace-pre-wrap">
+                          <MessageSquareText size={14} color={COLORS.fleet} className="mt-0.5 shrink-0" />
+                          {e.note}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   BarChart, Bar, Cell, Area, AreaChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
   Coins, Wallet, TrendingUp, HandCoins, CalendarCheck, Gauge,
-  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Bus, Search,
+  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Bus, Search, MessageSquareText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -210,6 +210,8 @@ export default function DashboardClient({ vehicles, role }) {
   const [customEnd, setCustomEnd] = useState(isoOf(todayDate()));
   const [metric, setMetric] = useState("Recette");
   const [searchDate, setSearchDate] = useState("");
+  // Clé de la ligne dont la remarque est dépliée, ou null.
+  const [noteOuverte, setNoteOuverte] = useState(null);
 
   useEffect(() => {
     if (!vehicleId) return;
@@ -470,15 +472,15 @@ export default function DashboardClient({ vehicles, role }) {
             <table className="w-full text-sm font-figures">
               <thead>
                 <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                  {[...(isAllMode ? ["Véhicule"] : []), "Date", "Receveur", "Recette", "Gazoil", "Autres", "Net versé"].map((h) => (
-                    <th key={h} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
+                  {[...(isAllMode ? ["Véhicule"] : []), "Date", "Receveur", "Recette", "Gazoil", "Autres", "Net versé", ""].map((h, i) => (
+                    <th key={h + i} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {recentEntries.map((e) => (
+                  <Fragment key={`${e.vehicle_id}-${e.date}`}>
                   <tr
-                    key={`${e.vehicle_id}-${e.date}`}
                     className="border-t"
                     style={{ borderColor: COLORS.line, color: Number(e.recette) === 0 ? "var(--text-slate-light)" : COLORS.ink }}
                   >
@@ -493,7 +495,30 @@ export default function DashboardClient({ vehicles, role }) {
                     <td className="px-5 py-2">{fmt(e.gazoil)}</td>
                     <td className="px-5 py-2">{fmt(e.autres)}</td>
                     <td className="px-5 py-2 font-semibold">{fmt(e.net)}</td>
+                    <td className="px-5 py-2">
+                      {e.note && (
+                        <button
+                          onClick={() => setNoteOuverte(noteOuverte === `${e.vehicle_id}-${e.date}` ? null : `${e.vehicle_id}-${e.date}`)}
+                          title="Voir la remarque de la journée"
+                          className="hover:opacity-70"
+                          style={{ color: noteOuverte === `${e.vehicle_id}-${e.date}` ? COLORS.fleet : "var(--text-slate-light)" }}
+                        >
+                          <MessageSquareText size={14} />
+                        </button>
+                      )}
+                    </td>
                   </tr>
+                  {e.note && noteOuverte === `${e.vehicle_id}-${e.date}` && (
+                    <tr style={{ backgroundColor: "var(--bg-page)" }}>
+                      <td colSpan={isAllMode ? 9 : 8} className="px-5 py-3">
+                        <div className="flex items-start gap-2 font-sans text-xs leading-relaxed text-[var(--text-slate)] whitespace-pre-wrap">
+                          <MessageSquareText size={14} color={COLORS.fleet} className="mt-0.5 shrink-0" />
+                          {e.note}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -542,6 +567,23 @@ export default function DashboardClient({ vehicles, role }) {
                       <DetailItem label="Total caisse" value={`${fmt(r.total_caisse)} F`} />
                       <DetailItem label="Net versé" value={`${fmt(r.net)} F`} accent={COLORS.green} />
                     </div>
+                    {r.note && (
+                      <div
+                        className="flex items-start gap-2.5 rounded-xl px-4 py-3 mt-2.5 border text-xs leading-relaxed text-[var(--text-slate)] whitespace-pre-wrap"
+                        style={{
+                          borderColor: "color-mix(in srgb, var(--fleet-bright) 30%, transparent)",
+                          backgroundColor: "color-mix(in srgb, var(--fleet-bright) 6%, transparent)",
+                        }}
+                      >
+                        <MessageSquareText size={15} color={COLORS.fleet} className="mt-0.5 shrink-0" />
+                        <div>
+                          <div className="font-semibold mb-0.5" style={{ color: COLORS.ink }}>
+                            Remarque sur la journée
+                          </div>
+                          {r.note}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

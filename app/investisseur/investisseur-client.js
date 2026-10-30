@@ -444,12 +444,13 @@ export default function InvestisseurClient({
   };
 
   const exportCSV = () => {
-    const entete = ["Date", "Receveur", "Recette", "Depenses du jour", "Note", "Net remonte"];
+    const entete = ["Date", "Receveur", "Recette", "Depenses du jour", "Note", "Remarque du jour", "Net remonte"];
     const lignes = base.sorted.map((e) => [
       e.date, e.receveur || "",
       Math.round(Number(e.recette) || 0),
       Math.round((Number(e.gazoil) || 0) + (Number(e.autres) || 0)),
       `${e.gazoil_note || ""} ${e.autres_note || ""}`.trim().replace(/[;\n\r]/g, " "),
+      (e.note || "").replace(/[;\n\r]/g, " "),
       Math.round(Number(e.net) || 0),
     ]);
     const csv = "﻿" + [entete, ...lignes].map((l) => l.join(";")).join("\r\n");
