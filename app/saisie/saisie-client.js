@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Save, Pencil, Trash2, X, Loader2, AlertCircle, CalendarSearch, Repeat, CalendarRange, MessageSquareText } from "lucide-react";
+import { Save, Pencil, Trash2, X, Loader2, AlertCircle, CalendarSearch, Repeat, CalendarRange, MessageSquareText, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { saveEntry, deleteEntry, saveLocationRange } from "./actions";
 
@@ -18,6 +18,22 @@ function Field({ label, children, hint }) {
       {children}
       {hint && <span className="text-[11px] text-[var(--text-slate-light)]">{hint}</span>}
     </label>
+  );
+}
+
+const MOIS_LONG = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+const fmtMois = (cle) => {
+  const [y, m] = cle.split("-");
+  return `${MOIS_LONG[Number(m) - 1]} ${y}`;
+};
+
+function Detail({ label, valeur, legende, accent }) {
+  return (
+    <div className="rounded-xl bg-[var(--bg-surface)] p-3 min-w-0">
+      <div className="text-[11px] text-[var(--text-slate)] mb-0.5">{label}</div>
+      <div className="text-sm font-semibold break-words" style={{ color: accent || COLORS.ink }}>{valeur}</div>
+      {legende && <div className="text-[11px] text-[var(--text-slate-light)] mt-1 break-words">{legende}</div>}
+    </div>
   );
 }
 
@@ -38,8 +54,11 @@ export default function SaisieClient({ vehicles }) {
   const [form, setForm] = useState(null);
   const [editingDate, setEditingDate] = useState(null);
   const [searchDate, setSearchDate] = useState("");
-  // Date de la ligne dont la remarque est dépliée, ou null.
-  const [noteOuverte, setNoteOuverte] = useState(null);
+  // Date de la ligne dépliée dans l'historique, ou null.
+  const [ligneOuverte, setLigneOuverte] = useState(null);
+  const [moisFiltre, setMoisFiltre] = useState("tous");
+  const [recherche, setRecherche] = useState("");
+  const [nbAffichees, setNbAffichees] = useState(30);
 
   const [locOpen, setLocOpen] = useState(false);
   const [locDebut, setLocDebut] = useState("");
@@ -146,7 +165,32 @@ export default function SaisieClient({ vehicles }) {
     }
   };
 
-  const recent = useMemo(() => [...entries].reverse().slice(0, 8), [entries]);
+  // Mois disponibles, du plus récent au plus ancien.
+  const moisDisponibles = useMemo(
+    () => [...new Set(entries.map((e) => e.date.slice(0, 7)))].sort().reverse(),
+    [entries]
+  );
+
+  // L'historique complet, filtré. La recherche porte sur le receveur et sur
+  // les trois remarques : c'est là qu'on retrouve « la crevaison de juin ».
+  const historique = useMemo(() => {
+    const terme = recherche.trim().toLowerCase();
+    return [...entries]
+      .reverse()
+      .filter((e) => moisFiltre === "tous" || e.date.startsWith(moisFiltre))
+      .filter((e) => {
+        if (!terme) return true;
+        const champs = [e.receveur, e.note, e.gazoil_note, e.autres_note, e.date];
+        return champs.some((c) => (c || "").toLowerCase().includes(terme));
+      });
+  }, [entries, moisFiltre, recherche]);
+
+  // Remettre le compteur à zéro quand le filtre change, sinon on garderait
+  // « 90 affichées » sur une liste qui n'en compte plus que 12.
+  useEffect(() => {
+    setNbAffichees(30);
+    setLigneOuverte(null);
+  }, [moisFiltre, recherche, vehicleId]);
   const searchResult = useMemo(
     () => (searchDate ? entries.find((e) => e.date === searchDate) || null : undefined),
     [entries, searchDate]
@@ -468,79 +512,175 @@ export default function SaisieClient({ vehicles }) {
       </div>
 
       <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] mt-6 overflow-hidden">
-        <div className="px-5 py-4 text-sm font-semibold border-b" style={{ color: COLORS.ink, borderColor: COLORS.line }}>
-          Dernières saisies
+        <div className="px-5 py-4 border-b" style={{ borderColor: COLORS.line }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>
+              Historique des saisies
+            </div>
+            <div className="text-xs text-[var(--text-slate-light)]">
+              {historique.length} saisie{historique.length > 1 ? "s" : ""}
+              {historique.length !== entries.length ? ` sur ${entries.length}` : ""}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <select
+              value={moisFiltre}
+              onChange={(e) => setMoisFiltre(e.target.value)}
+              className="text-sm bg-[var(--bg-page)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5"
+            >
+              <option value="tous">Tous les mois</option>
+              {moisDisponibles.map((m) => (
+                <option key={m} value={m}>{fmtMois(m)}</option>
+              ))}
+            </select>
+            <div className="relative flex-1 min-w-[180px]">
+              <CalendarSearch size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-slate-light)]" />
+              <input
+                value={recherche}
+                onChange={(e) => setRecherche(e.target.value)}
+                placeholder="Rechercher dans les remarques, le receveur, la date…"
+                className="w-full text-sm bg-[var(--bg-page)] border border-[var(--border-line)] rounded-lg pl-8 pr-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30"
+              />
+            </div>
+            {(recherche || moisFiltre !== "tous") && (
+              <button
+                onClick={() => { setRecherche(""); setMoisFiltre("tous"); }}
+                className="text-xs text-[var(--text-slate-light)] underline underline-offset-2 whitespace-nowrap"
+              >
+                Tout afficher
+              </button>
+            )}
+          </div>
         </div>
+
         {loading ? (
           <div className="px-5 py-6 text-sm text-[var(--text-slate-light)] flex items-center gap-2">
             <Loader2 size={14} className="animate-spin" /> Chargement…
           </div>
-        ) : recent.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-[var(--text-slate-light)]">Aucune saisie pour ce véhicule.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm font-mono">
-              <thead>
-                <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                  {["Date", "Recette", "Gazoil", "Autres", "Net versé", ""].map((h) => (
-                    <th key={h} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((e) => (
-                  <Fragment key={e.date}>
-                  <tr className="border-t" style={{ borderColor: COLORS.line, color: e.recette === 0 ? "var(--text-slate-light)" : COLORS.ink }}>
-                    <td className="px-5 py-2 whitespace-nowrap">
-                      {e.date}
-                      {e.sans_chauffeur && (
-                        <span
-                          className="ml-2 font-sans text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                          style={{ backgroundColor: "color-mix(in srgb, var(--fleet) 14%, transparent)", color: "var(--fleet)" }}
-                          title="Location sans chauffeur — aucun salaire compté"
-                        >
-                          LOCATION
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-2">{fmt(e.recette)}</td>
-                    <td className="px-5 py-2">{fmt(e.gazoil)}</td>
-                    <td className="px-5 py-2">{fmt(e.autres)}</td>
-                    <td className="px-5 py-2 font-semibold">{fmt(e.net)}</td>
-                    <td className="px-5 py-2">
-                      <div className="flex items-center gap-2 font-sans">
-                        {e.note && (
-                          <button
-                            onClick={() => setNoteOuverte(noteOuverte === e.date ? null : e.date)}
-                            title="Voir la remarque"
-                            className="hover:opacity-70"
-                            style={{ color: noteOuverte === e.date ? COLORS.fleet : "var(--text-slate-light)" }}
-                          >
-                            <MessageSquareText size={14} />
-                          </button>
-                        )}
-                        <button onClick={() => startEdit(e)} className="text-[var(--text-slate-light)] hover:text-[var(--fleet)]"><Pencil size={14} /></button>
-                        <button onClick={() => onDelete(e.date)} className="text-[var(--text-slate-light)] hover:text-[var(--red)]"><Trash2 size={14} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                  {e.note && noteOuverte === e.date && (
-                    <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                      <td colSpan={6} className="px-5 py-3">
-                        <div className="flex items-start gap-2 font-sans text-xs leading-relaxed text-[var(--text-slate)] whitespace-pre-wrap">
-                          <MessageSquareText size={14} color={COLORS.fleet} className="mt-0.5 shrink-0" />
-                          {e.note}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
+        ) : historique.length === 0 ? (
+          <div className="px-5 py-6 text-sm text-[var(--text-slate-light)]">
+            {entries.length === 0
+              ? "Aucune saisie pour ce véhicule."
+              : "Aucune saisie ne correspond à ce filtre."}
           </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm font-mono">
+                <thead>
+                  <tr style={{ backgroundColor: "var(--bg-page)" }}>
+                    {["", "Date", "Receveur", "Recette", "Gazoil", "Autres", "Net versé", ""].map((h, i) => (
+                      <th key={h + i} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {historique.slice(0, nbAffichees).map((e) => {
+                    const ouverte = ligneOuverte === e.date;
+                    const aDesDetails = e.note || e.gazoil_note || e.autres_note || e.sans_chauffeur;
+                    return (
+                      <Fragment key={e.date}>
+                        <tr
+                          onClick={() => setLigneOuverte(ouverte ? null : e.date)}
+                          className="border-t cursor-pointer hover:bg-[var(--bg-page)]"
+                          style={{ borderColor: COLORS.line, color: e.recette === 0 ? "var(--text-slate-light)" : COLORS.ink }}
+                        >
+                          <td className="pl-4 pr-1 py-2 w-6">
+                            <ChevronRight
+                              size={14}
+                              className="transition-transform text-[var(--text-slate-light)]"
+                              style={{ transform: ouverte ? "rotate(90deg)" : "none" }}
+                            />
+                          </td>
+                          <td className="px-5 py-2 whitespace-nowrap">
+                            {e.date}
+                            {e.note && (
+                              <MessageSquareText
+                                size={12}
+                                className="inline-block ml-1.5 -mt-0.5"
+                                color={COLORS.fleet}
+                              />
+                            )}
+                          </td>
+                          <td className="px-5 py-2 font-sans">{e.receveur || "—"}</td>
+                          <td className="px-5 py-2">{fmt(e.recette)}</td>
+                          <td className="px-5 py-2">{fmt(e.gazoil)}</td>
+                          <td className="px-5 py-2">{fmt(e.autres)}</td>
+                          <td className="px-5 py-2 font-semibold">{fmt(e.net)}</td>
+                          <td className="px-5 py-2" onClick={(ev) => ev.stopPropagation()}>
+                            <div className="flex items-center gap-2 font-sans">
+                              <button onClick={() => startEdit(e)} title="Modifier" className="text-[var(--text-slate-light)] hover:text-[var(--fleet)]"><Pencil size={14} /></button>
+                              <button onClick={() => onDelete(e.date)} title="Supprimer" className="text-[var(--text-slate-light)] hover:text-[var(--red)]"><Trash2 size={14} /></button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {ouverte && (
+                          <tr style={{ backgroundColor: "var(--bg-page)" }}>
+                            <td colSpan={8} className="px-5 pb-4 pt-1">
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-sans">
+                                <Detail label="Recette" valeur={`${fmt(e.recette)} F`} />
+                                <Detail label="Gazoil" valeur={`${fmt(e.gazoil)} F`} legende={e.gazoil_note} />
+                                <Detail label="Autres dépenses" valeur={`${fmt(e.autres)} F`} legende={e.autres_note} />
+                                <Detail label="Total caisse" valeur={`${fmt(e.total_caisse)} F`} />
+                                <Detail label="Net versé" valeur={`${fmt(e.net)} F`} accent={COLORS.green} />
+                                <Detail label="Receveur" valeur={e.receveur || "—"} />
+                                <Detail
+                                  label="Mode"
+                                  valeur={e.sans_chauffeur ? "Location sans chauffeur" : "Avec chauffeur"}
+                                  accent={e.sans_chauffeur ? COLORS.fleet : undefined}
+                                />
+                              </div>
+
+                              {e.note ? (
+                                <div
+                                  className="flex items-start gap-2.5 rounded-xl px-4 py-3 mt-2.5 border font-sans text-xs leading-relaxed text-[var(--text-slate)] whitespace-pre-wrap"
+                                  style={{
+                                    borderColor: "color-mix(in srgb, var(--fleet) 30%, transparent)",
+                                    backgroundColor: "color-mix(in srgb, var(--fleet) 6%, transparent)",
+                                  }}
+                                >
+                                  <MessageSquareText size={15} color={COLORS.fleet} className="mt-0.5 shrink-0" />
+                                  <div>
+                                    <div className="font-semibold mb-0.5" style={{ color: COLORS.ink }}>
+                                      Remarque sur la journée
+                                    </div>
+                                    {e.note}
+                                  </div>
+                                </div>
+                              ) : (
+                                !aDesDetails && (
+                                  <div className="text-[11px] text-[var(--text-slate-light)] mt-2.5 font-sans">
+                                    Aucune remarque sur cette journée.
+                                  </div>
+                                )
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {historique.length > nbAffichees && (
+              <div className="px-5 py-3 border-t text-center" style={{ borderColor: COLORS.line }}>
+                <button
+                  onClick={() => setNbAffichees((n) => n + 30)}
+                  className="text-xs font-medium"
+                  style={{ color: COLORS.fleet }}
+                >
+                  Afficher 30 saisies de plus ({historique.length - nbAffichees} restantes)
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
+
     </main>
   );
 }
