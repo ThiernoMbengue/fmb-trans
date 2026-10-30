@@ -7,13 +7,33 @@ import { revalidatePath } from "next/cache";
 // et note (migration_note_saisie). Tant qu'une migration n'a pas été exécutée,
 // on réenregistre sans ces colonnes plutôt que de bloquer la saisie — mieux
 // vaut une remarque perdue qu'un versement qu'on ne peut pas enregistrer.
+//
+// Mais ce repli doit se voir : une remarque jetee en silence donne
+// l'impression que la fonction ne marche pas. L'appelant recoit donc de quoi
+// prevenir l'utilisateur.
 async function upsertEntries(supabase, rows) {
   let { error } = await supabase.from("entries").upsert(rows, { onConflict: "vehicle_id,date" });
-  if (error && /sans_chauffeur|"?note"?/i.test(error.message || "")) {
-    const sansColonne = rows.map(({ sans_chauffeur, note, ...reste }) => reste);
-    ({ error } = await supabase.from("entries").upsert(sansColonne, { onConflict: "vehicle_id,date" }));
-  }
-  return error;
+  if (!error) return { error: null };
+
+  const message = error.message || "";
+  const noteManquante = /\bnote\b/i.test(message);
+  const modeManquant = /sans_chauffeur/i.test(message);
+  if (!noteManquante && !modeManquant) return { error };
+
+  const sansColonne = rows.map(({ sans_chauffeur, note, ...reste }) => reste);
+  ({ error } = await supabase.from("entries").upsert(sansColonne, { onConflict: "vehicle_id,date" }));
+  if (error) return { error };
+
+  const manquantes = [];
+  if (noteManquante) manquantes.push("migration_note_saisie.sql");
+  if (modeManquant) manquantes.push("migration_location.sql");
+
+  return {
+    error: null,
+    avertissement:
+      `Versement enregistré, mais la remarque n'a pas pu être conservée : ` +
+      `exécutez ${manquantes.join(" et ")} dans Supabase.`,
+  };
 }
 
 export async function saveEntry(payload) {
@@ -38,12 +58,12 @@ export async function saveEntry(payload) {
     created_by: user?.id,
   };
 
-  const error = await upsertEntries(supabase, [row]);
+  const { error, avertissement } = await upsertEntries(supabase, [row]);
   if (error) return { error: error.message };
 
   revalidatePath("/saisie");
   revalidatePath("/");
-  return { success: true };
+  return { success: true, avertissement };
 }
 
 // Enregistre une série de saisies identiques sur une plage de dates (ex: location à montant fixe/jour)
@@ -88,12 +108,12 @@ export async function saveLocationRange(payload) {
     created_by: user?.id,
   }));
 
-  const error = await upsertEntries(supabase, rows);
+  const { error, avertissement } = await upsertEntries(supabase, rows);
   if (error) return { error: error.message };
 
   revalidatePath("/saisie");
   revalidatePath("/");
-  return { success: true, count: dates.length };
+  return { success: true, count: dates.length, avertissement };
 }
 
 export async function deleteEntry(vehicleId, date) {

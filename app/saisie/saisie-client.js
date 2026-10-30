@@ -71,7 +71,7 @@ export default function SaisieClient({ vehicles }) {
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 2800);
+    setTimeout(() => setToast(null), type === "success" ? 2800 : 8000);
   };
 
   const loadEntries = async (vId) => {
@@ -142,6 +142,13 @@ export default function SaisieClient({ vehicles }) {
     setSaving(false);
     if (res?.error) {
       showToast("Erreur: " + res.error, "error");
+    } else if (res?.avertissement) {
+      showToast(res.avertissement, "warning");
+      setEditingDate(null);
+      await loadEntries(vehicleId);
+      const d = new Date(form.date + "T00:00:00");
+      d.setDate(d.getDate() + 1);
+      setForm(emptyForm(vehicle?.chauffeur, d.toISOString().slice(0, 10)));
     } else {
       showToast(editingDate ? "Saisie mise à jour" : "Versement enregistré");
       setEditingDate(null);
@@ -164,6 +171,17 @@ export default function SaisieClient({ vehicles }) {
       if (editingDate === date) cancelEdit();
     }
   };
+
+  // Si les lignes chargées ne portent pas la clé, c'est que la colonne
+  // n'existe pas encore en base : la migration n'a pas été exécutée. Mieux
+  // vaut le dire que laisser croire que les remarques ne fonctionnent pas.
+  const migrationsManquantes = useMemo(() => {
+    if (!entries.length) return [];
+    const manque = [];
+    if (!("note" in entries[0])) manque.push("migration_note_saisie.sql");
+    if (!("sans_chauffeur" in entries[0])) manque.push("migration_location.sql");
+    return manque;
+  }, [entries]);
 
   // Mois disponibles, du plus récent au plus ancien.
   const moisDisponibles = useMemo(
@@ -232,7 +250,8 @@ export default function SaisieClient({ vehicles }) {
       showToast("Erreur: " + res.error, "error");
     } else {
       const skipped = locOverwrite ? 0 : locExisting.length;
-      showToast(`${res.count} jour(s) enregistré(s) pour la location${skipped ? `, ${skipped} déjà saisi(s) ignoré(s)` : ""}`);
+      if (res.avertissement) showToast(res.avertissement, "warning");
+      else showToast(`${res.count} jour(s) enregistré(s) pour la location${skipped ? `, ${skipped} déjà saisi(s) ignoré(s)` : ""}`);
       setLocDebut(""); setLocFin(""); setLocMontant(""); setLocReceveur(""); setLocNote("Location"); setLocOverwrite(false);
       await loadEntries(vehicleId);
     }
@@ -250,11 +269,35 @@ export default function SaisieClient({ vehicles }) {
     <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto">
       {toast && (
         <div
-          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 text-white"
-          style={{ backgroundColor: toast.type === "error" ? COLORS.red : COLORS.green }}
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-start gap-2 text-white max-w-[90vw]"
+          style={{
+            backgroundColor:
+              toast.type === "error" ? COLORS.red : toast.type === "warning" ? COLORS.amber : COLORS.green,
+          }}
         >
-          {toast.type === "error" && <AlertCircle size={16} />}
+          {toast.type !== "success" && <AlertCircle size={16} className="shrink-0 mt-0.5" />}
           {toast.msg}
+        </div>
+      )}
+
+      {migrationsManquantes.length > 0 && (
+        <div
+          className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-5 border text-xs leading-relaxed"
+          style={{
+            borderColor: "color-mix(in srgb, var(--amber) 40%, transparent)",
+            backgroundColor: "color-mix(in srgb, var(--amber) 8%, transparent)",
+            color: "var(--text-slate)",
+          }}
+        >
+          <AlertCircle size={16} color={COLORS.amber} className="mt-0.5 shrink-0" />
+          <div>
+            <strong style={{ color: COLORS.ink }}>
+              Une migration n&apos;a pas encore été exécutée.
+            </strong>{" "}
+            Les remarques que vous saisissez ne sont pas conservées. Ouvrez Supabase &gt; SQL Editor
+            et exécutez {migrationsManquantes.map((m) => <code key={m} className="font-mono">{m}</code>).reduce((a, b) => [a, " puis ", b])},
+            puis rechargez cette page.
+          </div>
         </div>
       )}
 
