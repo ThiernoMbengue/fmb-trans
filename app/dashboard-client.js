@@ -8,8 +8,11 @@ import {
 import {
   Coins, Wallet, TrendingUp, HandCoins, CalendarCheck, Gauge,
   ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Bus, Search, MessageSquareText,
+  NotebookPen, CalendarClock, ArrowRight,
 } from "lucide-react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { TYPE_PAR_ID, aSurveiller } from "@/lib/carnet";
 
 const COLORS = {
   ink: "var(--text-ink)", fleet: "var(--fleet-bright)", amber: "var(--amber)",
@@ -212,6 +215,18 @@ export default function DashboardClient({ vehicles, role }) {
   const [searchDate, setSearchDate] = useState("");
   // Clé de la ligne dont la remarque est dépliée, ou null.
   const [noteOuverte, setNoteOuverte] = useState(null);
+  // Lignes ouvertes du carnet de bord (gestionnaire uniquement).
+  const [carnet, setCarnet] = useState([]);
+
+  useEffect(() => {
+    if (role !== "admin") return;
+    // La table peut ne pas exister encore : dans ce cas le bloc reste masqué.
+    supabase
+      .from("carnet")
+      .select("id,type,titre,montant,date_echeance,statut")
+      .eq("statut", "ouvert")
+      .then(({ data, error }) => setCarnet(error ? [] : data || []));
+  }, [role]); // eslint-disable-line
 
   useEffect(() => {
     if (!vehicleId) return;
@@ -225,6 +240,8 @@ export default function DashboardClient({ vehicles, role }) {
       setLoading(false);
     });
   }, [vehicleId]); // eslint-disable-line
+
+  const surveille = useMemo(() => aSurveiller(carnet), [carnet]);
 
   const isAllMode = vehicleId === ALL_ID;
   const vehicle = isAllMode ? null : vehicles.find((v) => v.id === vehicleId);
@@ -348,6 +365,65 @@ export default function DashboardClient({ vehicles, role }) {
           </div>
         </div>
       </section>
+
+      {/* Ce que le carnet de bord réclame : échéances proches et dettes
+          ouvertes. Le reste y dort, pour ne pas en faire un cimetière. */}
+      {role === "admin" && (surveille.echeances.length > 0 || surveille.aPayer > 0 || surveille.aRecevoir > 0) && (
+        <section className="surface-card rounded-2xl p-5 mt-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                style={{ backgroundColor: "color-mix(in srgb, var(--amber) 16%, transparent)" }}>
+                <NotebookPen size={15} color={COLORS.amber} />
+              </div>
+              <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>À surveiller</div>
+            </div>
+            <Link href="/carnet" className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: COLORS.fleet }}>
+              Carnet de bord <ArrowRight size={13} />
+            </Link>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mb-3">
+            {surveille.aRecevoir > 0 && (
+              <span className="text-xs rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "var(--bg-page)", color: COLORS.green }}>
+                On nous doit <strong className="font-figures">{fmt(surveille.aRecevoir)} F</strong>
+              </span>
+            )}
+            {surveille.aPayer > 0 && (
+              <span className="text-xs rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "var(--bg-page)", color: COLORS.red }}>
+                Nous devons <strong className="font-figures">{fmt(surveille.aPayer)} F</strong>
+              </span>
+            )}
+          </div>
+
+          {surveille.echeances.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {surveille.echeances.slice(0, 5).map((l) => {
+                const enRetard = l.jours < 0;
+                const proche = l.jours >= 0 && l.jours <= 7;
+                const couleur = enRetard ? COLORS.red : proche ? COLORS.amber : COLORS.slate;
+                return (
+                  <div key={l.id} className="flex items-center justify-between gap-3 text-sm rounded-lg px-3 py-2"
+                    style={{ backgroundColor: "var(--bg-page)" }}>
+                    <span className="min-w-0 truncate" style={{ color: COLORS.ink }}>
+                      {(TYPE_PAR_ID[l.type] || {}).emoji} {l.titre}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[11px] shrink-0" style={{ color: couleur }}>
+                      <CalendarClock size={12} />
+                      {enRetard ? `en retard de ${-l.jours} j` : l.jours === 0 ? "aujourd'hui" : l.jours === 1 ? "demain" : `dans ${l.jours} j`}
+                    </span>
+                  </div>
+                );
+              })}
+              {surveille.echeances.length > 5 && (
+                <div className="text-[11px] text-[var(--text-slate-light)] mt-0.5">
+                  et {surveille.echeances.length - 5} autre(s) échéance(s).
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
         <div className="flex items-center gap-2.5 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl px-3 py-2 min-w-0">
