@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FileText, Loader2, AlertCircle, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { generateVersementsPDF, generateAvancesPDF, generateDecomptePDF } from "@/lib/pdf/report";
+import { telechargerPDF } from "@/lib/telecharger";
 
 const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)", green: "var(--green)", red: "var(--red)" };
 const inputClass =
@@ -52,7 +53,7 @@ export default function RapportsClient({ vehicles, role }) {
           .gte("date", dateDebut).lte("date", dateFin).order("date", { ascending: true });
         if (error) throw error;
         if (!data.length) return showToast("Aucune saisie sur cette période");
-        generateVersementsPDF(vehicle, data, dateDebut, dateFin).save(filename);
+        await telechargerPDF(generateVersementsPDF(vehicle, data, dateDebut, dateFin), filename);
       }
 
       if (docType === "avances") {
@@ -61,7 +62,7 @@ export default function RapportsClient({ vehicles, role }) {
           .gte("date", dateDebut).lte("date", dateFin).order("date", { ascending: true });
         if (error) throw error;
         if (!data.length) return showToast("Aucune avance sur cette période");
-        generateAvancesPDF(vehicle, data, dateDebut, dateFin).save(filename);
+        await telechargerPDF(generateAvancesPDF(vehicle, data, dateDebut, dateFin), filename);
       }
 
       if (docType === "decompte") {
@@ -72,7 +73,7 @@ export default function RapportsClient({ vehicles, role }) {
         if (entriesRes.error) throw entriesRes.error;
         if (avancesRes.error) throw avancesRes.error;
         if (!entriesRes.data.length && !avancesRes.data.length) return showToast("Aucune donnée sur cette période");
-        generateDecomptePDF(vehicle, entriesRes.data, avancesRes.data, dateDebut, dateFin).save(filename);
+        await telechargerPDF(generateDecomptePDF(vehicle, entriesRes.data, avancesRes.data, dateDebut, dateFin), filename);
       }
     } catch (e) {
       showToast("Erreur lors de la génération : " + e.message);

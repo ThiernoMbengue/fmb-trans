@@ -8,6 +8,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { savePaiement, deletePaiement } from "./actions";
 import { generateRecuPDF } from "@/lib/pdf/report";
+import { telechargerPDF } from "@/lib/telecharger";
 import { construireDecomptes, avancesNonAbsorbees } from "@/lib/decomptes";
 import { lireTout } from "@/lib/supabase/lire-tout";
 
@@ -202,10 +203,15 @@ export default function PaiementsClient({ vehicles, role }) {
     }
   };
 
-  const telechargerRecu = (d) => {
-    generateRecuPDF(vehicle, d, d.paiements).save(
-      `recu_${vehicle.immatriculation}_${d.periode}.pdf`
-    );
+  const telechargerRecu = async (d) => {
+    try {
+      await telechargerPDF(
+        generateRecuPDF(vehicle, d, d.paiements),
+        `recu_${vehicle.immatriculation}_${d.periode}.pdf`
+      );
+    } catch (e) {
+      showToast("Reçu indisponible : " + (e?.message || "erreur inconnue"), "error");
+    }
   };
 
   if (!vehicles.length) {

@@ -11,6 +11,7 @@ import {
   CalendarDays, ShieldCheck, Wrench, UserCog, Receipt, PiggyBank,
 } from "lucide-react";
 import { generateVersementsPDF, generateDossierInvestisseurPDF } from "@/lib/pdf/report";
+import { telechargerPDF, telechargerTexte } from "@/lib/telecharger";
 
 const COLORS = {
   ink: "var(--text-ink)", fleet: "var(--fleet-bright)", amber: "var(--amber)",
@@ -431,17 +432,21 @@ export default function InvestisseurClient({
     mois: moisDetail,
   });
 
-  const exportDossierPDF = () => {
-    generateDossierInvestisseurPDF(vehicle, dossierPourPDF()).save(
-      `dossier_investisseur_${vehicle.immatriculation}_${base.finPeriode}.pdf`
-    );
-  };
+  // Sur mobile la remise d'un fichier peut échouer (stockage plein, partage
+  // refusé) : mieux vaut le dire que laisser un bouton qui ne fait rien.
+  const remettre = (action) => action().catch((e) => alert("Document indisponible : " + (e?.message || "erreur inconnue")));
 
-  const exportVersementsPDF = () => {
-    generateVersementsPDF(vehicle, base.sorted, base.premiereDate, base.derniereSaisie).save(
+  const exportDossierPDF = () =>
+    remettre(() => telechargerPDF(
+      generateDossierInvestisseurPDF(vehicle, dossierPourPDF()),
+      `dossier_investisseur_${vehicle.immatriculation}_${base.finPeriode}.pdf`
+    ));
+
+  const exportVersementsPDF = () =>
+    remettre(() => telechargerPDF(
+      generateVersementsPDF(vehicle, base.sorted, base.premiereDate, base.derniereSaisie),
       `releve_versements_${vehicle.immatriculation}.pdf`
-    );
-  };
+    ));
 
   const exportCSV = () => {
     const entete = ["Date", "Receveur", "Recette", "Depenses du jour", "Note", "Remarque du jour", "Net remonte"];
@@ -454,12 +459,7 @@ export default function InvestisseurClient({
       Math.round(Number(e.net) || 0),
     ]);
     const csv = "﻿" + [entete, ...lignes].map((l) => l.join(";")).join("\r\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `donnees_${vehicle.immatriculation}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    remettre(() => telechargerTexte(csv, `donnees_${vehicle.immatriculation}.csv`, "text/csv"));
   };
 
   const pctBar = Math.max(0, Math.min(100, invest.pctRembourse));
