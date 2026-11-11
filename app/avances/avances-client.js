@@ -2,72 +2,50 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Save, Trash2, Loader2, AlertCircle, HandCoins, TriangleAlert, Send, Check, X, Clock,
-  CheckCircle2, RotateCcw,
+  Save, Trash2, Loader2, HandCoins, TriangleAlert, Send, Check, X, Clock,
+  CheckCircle2, RotateCcw, Bus, Wallet, Plus, CircleHelp, ChevronDown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { fmtF, fmtJour, fmtPeriode, todayISO } from "@/lib/format";
+import { EnTete, SelecteurVehicule, Champ, Vide, Chargement, Indicateur, useToast, useConfirm } from "@/components/ui";
 import {
   saveAvance, deleteAvance, setAvanceStatut,
   requestAvance, cancelAvanceRequest, resolveAvanceRequest,
 } from "./actions";
 
-const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)", green: "var(--green)", red: "var(--red)", amber: "var(--amber)", line: "var(--border-line)" };
-const inputClass =
-  "w-full text-sm bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30";
-const fmt = (n) => Math.round(Number(n) || 0).toLocaleString("fr-FR").replace(/,/g, " ");
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet-bright)", green: "var(--green)", red: "var(--red)", amber: "var(--amber)", slate: "var(--text-slate)", line: "var(--border-line)" };
 
-const TYPE_LABEL = {
-  avance_proprietaire: "Avance au propriétaire",
-  depense_imprevue: "Dépense imprévue (véhicule)",
-  remboursement: "Remboursement reçu",
+const TYPES = {
+  avance_proprietaire: { label: "Avance au propriétaire", court: "Avance", couleur: COLORS.fleet },
+  depense_imprevue: { label: "Dépense imprévue (véhicule)", court: "Dépense imprévue", couleur: COLORS.amber },
+  remboursement: { label: "Remboursement reçu", court: "Remboursement", couleur: COLORS.green },
 };
 
 const STATUS_LABEL = { en_attente: "En attente", approuvee: "Approuvée", refusee: "Refusée" };
-const STATUS_COLOR = { en_attente: "amber", approuvee: "green", refusee: "red" };
+const STATUS_COLOR = { en_attente: COLORS.amber, approuvee: COLORS.green, refusee: COLORS.red };
 
 // Une ligne est « réglée » lorsqu'elle a déjà été prise en compte dans un
 // décompte mensuel soldé. Elle sort alors des sommes encore dues, mais reste
 // dans l'historique : c'est ce que la suppression ne permettait pas.
 const estReglee = (r) => r.statut === "regularisee";
 
-const MOIS_LONG = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
-const fmtPeriode = (key) => {
-  if (!key) return "";
-  const [y, m] = key.split("-");
-  return `${MOIS_LONG[Number(m) - 1]} ${y}`;
-};
-
-function Field({ label, children }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-[var(--text-slate)]">{label}</span>
-      {children}
-    </label>
-  );
-}
-
 const emptyForm = () => ({ date: todayISO(), type: "avance_proprietaire", montant: "", note: "" });
 
 export default function AvancesClient({ vehicles, role }) {
   const isAdmin = role === "admin";
   const supabase = createClient();
-  const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
-  const vehicle = vehicles.find((v) => v.id === vehicleId) || null;
+  const toast = useToast();
+  const confirmer = useConfirm();
 
+  const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
   const [rows, setRows] = useState([]);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState(null);
   const [form, setForm] = useState(emptyForm());
   const [requestForm, setRequestForm] = useState({ montant: "", note: "" });
   const [resolvingId, setResolvingId] = useState(null);
-
-  const showToast = (msg, type = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 2800);
-  };
+  const [filtre, setFiltre] = useState("toutes");
 
   const loadRows = async (vId) => {
     setLoading(true);
@@ -75,7 +53,8 @@ export default function AvancesClient({ vehicles, role }) {
       supabase.from("avances").select("*").eq("vehicle_id", vId).order("date", { ascending: false }),
       supabase.from("avance_requests").select("*").eq("vehicle_id", vId).order("created_at", { ascending: false }),
     ]);
-    if (!avancesRes.error) setRows(avancesRes.data || []);
+    if (avancesRes.error) toast("Chargement impossible : " + avancesRes.error.message, "error");
+    else setRows(avancesRes.data || []);
     if (!requestsRes.error) setRequests(requestsRes.data || []);
     setLoading(false);
   };
@@ -84,107 +63,78 @@ export default function AvancesClient({ vehicles, role }) {
     if (vehicleId) loadRows(vehicleId);
   }, [vehicleId]); // eslint-disable-line
 
+  const executer = async (action, succes) => {
+    setSaving(true);
+    const res = await action();
+    setSaving(false);
+    if (res?.error) { toast(res.error, "error"); return false; }
+    if (succes) toast(succes);
+    await loadRows(vehicleId);
+    return true;
+  };
+
   const onSave = async () => {
     if (!vehicleId || !form.montant) return;
-    setSaving(true);
-    const res = await saveAvance({ vehicleId, ...form });
-    setSaving(false);
-    if (res?.error) {
-      showToast("Erreur: " + res.error, "error");
-    } else {
-      showToast("Enregistré");
-      setForm(emptyForm());
-      await loadRows(vehicleId);
-    }
+    if (await executer(() => saveAvance({ vehicleId, ...form }), "Ligne enregistrée")) setForm(emptyForm());
   };
 
-  const onDelete = async (id) => {
-    if (!confirm("Supprimer définitivement cette ligne ?\n\nPour une avance déjà récupérée, préférez « Marquer réglée » : la trace de l'argent remis est conservée.")) return;
-    setSaving(true);
-    const res = await deleteAvance(id);
-    setSaving(false);
-    if (res?.error) showToast("Erreur: " + res.error, "error");
-    else {
-      showToast("Supprimé");
-      await loadRows(vehicleId);
-    }
+  const onDelete = async (r) => {
+    const ok = await confirmer({
+      titre: "Supprimer définitivement cette ligne ?",
+      message: `${TYPES[r.type]?.court || "Ligne"} de ${fmtF(r.montant)} du ${fmtJour(r.date, { annee: true })}.\n\nPour une avance déjà récupérée, préférez « Marquer réglée » : la trace de l'argent remis est conservée.`,
+      confirmer: "Supprimer",
+      danger: true,
+    });
+    if (ok) await executer(() => deleteAvance(r.id), "Ligne supprimée");
   };
 
-  const onToggleStatut = async (row) => {
-    const vers = estReglee(row) ? "en_cours" : "regularisee";
-
-    if (vers === "regularisee" && row.statut !== "regularisee") {
-      const note = prompt(
-        "Marquer cette ligne comme réglée à la main.\n\n" +
-        "Elle sera RETIRÉE des décomptes mensuels et cessera d'être déduite\n" +
-        "des paiements. Les mois concernés seront recalculés.\n\n" +
-        "Comment a-t-elle été réglée ? (facultatif)\n" +
-        "Ex : rendue en espèces, compensée, abandonnée, saisie par erreur…",
-        ""
-      );
-      // prompt renvoie null si l'utilisateur annule.
+  const onToggleStatut = async (r) => {
+    if (!estReglee(r)) {
+      const note = await confirmer({
+        titre: "Marquer cette ligne comme réglée",
+        message: "Elle sera retirée des décomptes mensuels et cessera d'être déduite des paiements. Les mois concernés seront recalculés.",
+        saisie: { label: "Comment a-t-elle été réglée ? (facultatif)", placeholder: "Rendue en espèces, compensée, saisie par erreur…" },
+        confirmer: "Marquer réglée",
+      });
       if (note === null) return;
-      setSaving(true);
-      const res = await setAvanceStatut(row.id, vers, note);
-      setSaving(false);
-      if (res?.error) showToast("Erreur: " + res.error, "error");
-      else {
-        showToast("Marquée comme réglée");
-        await loadRows(vehicleId);
-      }
+      await executer(() => setAvanceStatut(r.id, "regularisee", note), "Ligne marquée comme réglée");
       return;
     }
 
-    if (row.regularisee_auto && !confirm(
-      "Cette ligne a été réglée automatiquement par le paiement de " +
-      fmtPeriode(row.regularisee_periode) + ".\n\n" +
-      "La rouvrir manuellement sera annulé au prochain enregistrement de paiement. Continuer ?"
-    )) return;
-
-    setSaving(true);
-    const res = await setAvanceStatut(row.id, vers);
-    setSaving(false);
-    if (res?.error) showToast("Erreur: " + res.error, "error");
-    else {
-      showToast("Remise en cours");
-      await loadRows(vehicleId);
+    if (r.regularisee_auto) {
+      const ok = await confirmer({
+        titre: "Rouvrir cette ligne ?",
+        message: `Elle a été réglée automatiquement par le paiement de ${fmtPeriode(r.regularisee_periode)}. Si vous la rouvrez, elle sera de nouveau marquée réglée au prochain enregistrement de paiement.`,
+        confirmer: "Rouvrir quand même",
+      });
+      if (!ok) return;
     }
+    await executer(() => setAvanceStatut(r.id, "en_cours"), "Ligne remise en cours");
   };
 
   const onSendRequest = async () => {
     if (!vehicleId || !requestForm.montant) return;
-    setSaving(true);
-    const res = await requestAvance({ vehicleId, ...requestForm });
-    setSaving(false);
-    if (res?.error) {
-      showToast("Erreur: " + res.error, "error");
-    } else {
-      showToast("Demande envoyée");
+    if (await executer(() => requestAvance({ vehicleId, ...requestForm }), "Demande envoyée au gestionnaire")) {
       setRequestForm({ montant: "", note: "" });
-      await loadRows(vehicleId);
     }
   };
 
-  const onCancelRequest = async (id) => {
-    setSaving(true);
-    const res = await cancelAvanceRequest(id);
-    setSaving(false);
-    if (res?.error) showToast("Erreur: " + res.error, "error");
-    else {
-      showToast("Demande annulée");
-      await loadRows(vehicleId);
-    }
+  const onCancelRequest = async (r) => {
+    const ok = await confirmer({ titre: "Annuler cette demande ?", message: `Demande de ${fmtF(r.montant)}.`, confirmer: "Annuler la demande", annuler: "Garder", danger: true });
+    if (ok) await executer(() => cancelAvanceRequest(r.id), "Demande annulée");
   };
 
-  const onResolve = async (id, decision) => {
-    setResolvingId(id);
-    const res = await resolveAvanceRequest(id, decision);
+  const onResolve = async (r, decision) => {
+    if (decision === "refusee") {
+      const ok = await confirmer({ titre: "Refuser cette demande ?", message: `Demande de ${fmtF(r.montant)}${r.note ? ` — ${r.note}` : ""}.`, confirmer: "Refuser", danger: true });
+      if (!ok) return;
+    }
+    setResolvingId(r.id);
+    const res = await resolveAvanceRequest(r.id, decision);
     setResolvingId(null);
-    if (res?.error) showToast("Erreur: " + res.error, "error");
-    else {
-      showToast(decision === "approuvee" ? "Demande approuvée" : "Demande refusée");
-      await loadRows(vehicleId);
-    }
+    if (res?.error) return toast(res.error, "error");
+    toast(decision === "approuvee" ? "Demande approuvée — l'avance est enregistrée" : "Demande refusée");
+    await loadRows(vehicleId);
   };
 
   const totals = useMemo(() => {
@@ -201,210 +151,105 @@ export default function AvancesClient({ vehicles, role }) {
     const rembourse = somme(enCours, "remboursement");
 
     return {
-      avance,
-      depense,
-      rembourse,
+      avance, depense, rembourse,
       soldeDu: avance + depense - rembourse,
       regle: somme(reglees, "avance_proprietaire") + somme(reglees, "depense_imprevue"),
       nbReglees: reglees.length,
+      nbEnCours: enCours.length,
     };
   }, [rows]);
 
+  const visibles = useMemo(
+    () => rows.filter((r) => filtre === "toutes" || (filtre === "reglees" ? estReglee(r) : !estReglee(r))),
+    [rows, filtre]
+  );
+
+  const enAttente = requests.filter((r) => r.status === "en_attente");
+
   if (!vehicles.length) {
     return (
-      <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto text-sm text-[var(--text-slate-light)]">
-        {isAdmin
-          ? "Aucun véhicule enregistré. Ajoute d'abord un véhicule dans l'onglet « Véhicules »."
-          : "Aucun véhicule ne vous a été attribué pour le moment. Contactez le gestionnaire."}
+      <main className="page">
+        <EnTete titre="Avances et dépenses" />
+        <div className="carte">
+          <Vide icone={Bus} titre="Aucun véhicule pour le moment">
+            {isAdmin
+              ? "Ajoutez d'abord un véhicule depuis l'onglet « Véhicules »."
+              : "Aucun véhicule ne vous a encore été attribué. Contactez votre gestionnaire."}
+          </Vide>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto">
-      {toast && (
-        <div
-          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 text-white"
-          style={{ backgroundColor: toast.type === "error" ? COLORS.red : COLORS.green }}
-        >
-          {toast.type === "error" && <AlertCircle size={16} />}
-          {toast.msg}
-        </div>
-      )}
+    <main className="page animate-fade-up">
+      <EnTete
+        titre="Avances et dépenses"
+        description={
+          isAdmin
+            ? "L'argent remis au propriétaire en dehors du versement quotidien, et les dépenses imprévues avancées sur le véhicule."
+            : "Les avances que vous avez reçues et les dépenses imprévues avancées sur votre véhicule."
+        }
+      />
 
-      <h1 className="text-lg font-semibold mb-1" style={{ color: COLORS.ink }}>
-        Avances & dépenses imprévues
-      </h1>
-      <p className="text-xs text-[var(--text-slate-light)] mb-6">
-        Argent donné au propriétaire en dehors du versement quotidien, ou dépenses non prévues sur le véhicule.
-      </p>
+      <SelecteurVehicule className="mb-5" vehicles={vehicles} value={vehicleId} onChange={setVehicleId} />
 
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <select
-          value={vehicleId || ""}
-          onChange={(e) => setVehicleId(e.target.value)}
-          className="text-sm font-medium bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2"
-        >
-          {vehicles.map((v) => (
-            <option key={v.id} value={v.id}>{v.marque} — {v.immatriculation}</option>
-          ))}
-        </select>
-        {vehicle && (
-          <div className="text-xs text-[var(--text-slate-light)]">{vehicle.proprietaire} · chauffeur {vehicle.chauffeur}</div>
-        )}
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Indicateur icone={HandCoins} label="Avances en cours" valeur={fmtF(totals.avance)} legende="pas encore récupérées" couleur={COLORS.fleet} />
+        <Indicateur icone={TriangleAlert} label="Dépenses imprévues" valeur={fmtF(totals.depense)} legende="en cours" couleur={COLORS.amber} />
+        <Indicateur icone={Wallet} label="Reste à récupérer" valeur={fmtF(totals.soldeDu)} legende={totals.rembourse > 0 ? `après ${fmtF(totals.rembourse)} remboursés` : "lignes en cours uniquement"} couleur={COLORS.red} />
+        <Indicateur icone={CheckCircle2} label="Déjà réglé" valeur={fmtF(totals.regle)} legende={`${totals.nbReglees} ligne${totals.nbReglees > 1 ? "s" : ""}`} couleur={COLORS.green} />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
-          <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: COLORS.fleet }} />
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
-            <HandCoins size={14} color={COLORS.fleet} /> Avances au propriétaire
-          </div>
-          <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: COLORS.ink }}>{fmt(totals.avance)} F</div>
-          <div className="pl-2 text-[10px] text-[var(--text-slate-light)] mt-0.5">pas encore récupérées</div>
-        </div>
-        <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
-          <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: COLORS.amber }} />
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
-            <TriangleAlert size={14} color={COLORS.amber} /> Dépenses imprévues
-          </div>
-          <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: COLORS.ink }}>{fmt(totals.depense)} F</div>
-        </div>
-        <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
-          <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: COLORS.green }} />
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
-            Reste à récupérer
-          </div>
-          <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: COLORS.ink }}>{fmt(totals.soldeDu)} F</div>
-          <div className="pl-2 text-[10px] text-[var(--text-slate-light)] mt-0.5">lignes en cours uniquement</div>
-        </div>
-        <div className="relative bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-4 overflow-hidden">
-          <div className="absolute left-0 top-0 h-full w-1" style={{ backgroundColor: "var(--text-slate-light)" }} />
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] pl-2">
-            <CheckCircle2 size={14} color="var(--text-slate-light)" /> Déjà réglé
-          </div>
-          <div className="pl-2 font-mono text-xl font-semibold mt-1" style={{ color: "var(--text-slate)" }}>{fmt(totals.regle)} F</div>
-          <div className="pl-2 text-[10px] text-[var(--text-slate-light)] mt-0.5">
-            {totals.nbReglees} ligne{totals.nbReglees > 1 ? "s" : ""} récupérée{totals.nbReglees > 1 ? "s" : ""}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-6 border text-xs leading-relaxed text-[var(--text-slate)]"
-        style={{
-          borderColor: "color-mix(in srgb, var(--fleet) 30%, transparent)",
-          backgroundColor: "color-mix(in srgb, var(--fleet) 6%, transparent)",
-        }}
-      >
-        <CheckCircle2 size={15} color={COLORS.fleet} className="mt-0.5 shrink-0" />
-        <div>
-          <strong style={{ color: COLORS.ink }}>Une ligne réglée sort des sommes dues, mais reste dans l&apos;historique.</strong>{" "}
-          Il y a deux façons d&apos;y arriver, et elles n&apos;ont pas le même effet sur les décomptes.
-          <div className="mt-2 flex flex-col gap-1.5">
-            <div>
-              <strong style={{ color: COLORS.green }}>Automatique</strong> — quand un décompte mensuel
-              est soldé dans Paiements, les avances qu&apos;il couvrait basculent toutes seules. Elles
-              <strong> restent dans le décompte</strong> : c&apos;est lui qui les a justement récupérées.
-              Une avance qui dépasse ce que le mois pouvait absorber reste « en cours » jusqu&apos;à ce
-              que les mois suivants l&apos;aient couverte.
-            </div>
-            <div>
-              <strong style={{ color: COLORS.amber }}>Manuel</strong> — pour une somme réglée en dehors
-              du circuit mensuel : rendue en espèces, compensée, abandonnée, ou saisie par erreur. Elle
-              <strong> sort du décompte</strong> et cesse d&apos;être déduite des paiements. Les mois
-              concernés sont recalculés.
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {!isAdmin && (
-        <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6 mb-6">
-          <div className="text-sm font-semibold mb-1" style={{ color: COLORS.ink }}>Demander une avance</div>
-          <p className="text-xs text-[var(--text-slate-light)] mb-4">
-            Ta demande est envoyée au gestionnaire, qui l'approuve ou la refuse.
+      {/* Explication repliée : utile une fois, encombrante ensuite. */}
+      <details className="carte group mb-5 overflow-hidden">
+        <summary className="flex cursor-pointer list-none items-center gap-2.5 px-4 py-3 text-sm font-medium text-[var(--text-slate)] hover:text-[var(--text-ink)] sm:px-5 [&::-webkit-details-marker]:hidden">
+          <CircleHelp size={16} color={COLORS.fleet} className="shrink-0" />
+          Que signifie « réglée » ?
+          <ChevronDown size={16} className="ml-auto shrink-0 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="grid gap-4 border-t border-[var(--border-line)] px-4 py-4 text-xs leading-relaxed text-[var(--text-slate)] sm:grid-cols-2 sm:px-5">
+          <p className="sm:col-span-2">
+            <strong className="text-[var(--text-ink)]">Une ligne réglée sort des sommes dues, mais reste dans l&apos;historique.</strong>{" "}
+            Il y a deux façons d&apos;y arriver, et elles n&apos;ont pas le même effet sur les décomptes.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Field label="Montant (FCFA)">
-              <input type="number" className={inputClass} value={requestForm.montant} onChange={(e) => setRequestForm({ ...requestForm, montant: e.target.value })} placeholder="0" />
-            </Field>
-            <div className="md:col-span-2">
-              <Field label="Note">
-                <input className={inputClass} value={requestForm.note} onChange={(e) => setRequestForm({ ...requestForm, note: e.target.value })} placeholder="Ex: besoin urgent, dépannage véhicule…" />
-              </Field>
-            </div>
-          </div>
-          <button
-            onClick={onSendRequest}
-            disabled={saving || !requestForm.montant}
-            className="mt-4 flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white disabled:opacity-60"
-            style={{ backgroundColor: COLORS.fleet }}
-          >
-            {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-            Envoyer la demande
-          </button>
-
-          {requests.length > 0 && (
-            <div className="mt-6 pt-5 border-t" style={{ borderColor: COLORS.line }}>
-              <div className="text-xs font-medium uppercase tracking-wide text-[var(--text-slate)] mb-3">Vos demandes</div>
-              <div className="flex flex-col gap-2">
-                {requests.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between gap-3 text-sm bg-[var(--bg-page)] rounded-lg px-3 py-2">
-                    <div className="min-w-0">
-                      <span className="font-mono font-semibold" style={{ color: COLORS.ink }}>{fmt(r.montant)} F</span>
-                      {r.note && <span className="text-[var(--text-slate)] ml-2">— {r.note}</span>}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span
-                        className="text-xs font-medium px-2 py-0.5 rounded-full"
-                        style={{ backgroundColor: `color-mix(in srgb, ${COLORS[STATUS_COLOR[r.status]]} 14%, transparent)`, color: COLORS[STATUS_COLOR[r.status]] }}
-                      >
-                        {STATUS_LABEL[r.status]}
-                      </span>
-                      {r.status === "en_attente" && (
-                        <button onClick={() => onCancelRequest(r.id)} className="text-[var(--text-slate-light)] hover:text-[var(--red)]">
-                          <X size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <p>
+            <strong style={{ color: COLORS.green }}>Automatique</strong> — quand un décompte mensuel est soldé dans
+            Paiements, les avances qu&apos;il couvrait basculent toutes seules. Elles <strong>restent dans le décompte</strong> :
+            c&apos;est lui qui les a récupérées. Une avance qui dépasse ce que le mois pouvait absorber reste « en cours »
+            jusqu&apos;à ce que les mois suivants l&apos;aient couverte.
+          </p>
+          <p>
+            <strong style={{ color: COLORS.amber }}>Manuel</strong> — pour une somme réglée en dehors du circuit mensuel :
+            rendue en espèces, compensée, abandonnée, ou saisie par erreur. Elle <strong>sort du décompte</strong> et
+            cesse d&apos;être déduite des paiements. Les mois concernés sont recalculés.
+          </p>
         </div>
-      )}
+      </details>
 
-      {isAdmin && requests.some((r) => r.status === "en_attente") && (
-        <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6 mb-6">
-          <div className="flex items-center gap-2 text-sm font-semibold mb-4" style={{ color: COLORS.ink }}>
-            <Clock size={15} color={COLORS.amber} /> Demandes en attente
-          </div>
+      {/* Demandes à traiter — gestionnaire */}
+      {isAdmin && enAttente.length > 0 && (
+        <section className="carte mb-5 p-4 sm:p-5" style={{ borderColor: "color-mix(in srgb, var(--amber) 45%, var(--border-line))" }}>
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-ink)]">
+            <Clock size={16} color={COLORS.amber} /> {enAttente.length} demande{enAttente.length > 1 ? "s" : ""} d&apos;avance à traiter
+          </h2>
           <div className="flex flex-col gap-2">
-            {requests.filter((r) => r.status === "en_attente").map((r) => (
-              <div key={r.id} className="flex items-center justify-between gap-3 text-sm bg-[var(--bg-page)] rounded-lg px-3 py-2.5">
+            {enAttente.map((r) => (
+              <div key={r.id} className="flex flex-col gap-3 rounded-xl bg-[var(--bg-page)] p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <span className="font-mono font-semibold" style={{ color: COLORS.ink }}>{fmt(r.montant)} F</span>
-                  {r.note && <span className="text-[var(--text-slate)] ml-2">— {r.note}</span>}
+                  <div className="font-figures text-base font-bold text-[var(--text-ink)]">{fmtF(r.montant)}</div>
+                  {r.note && <div className="mt-0.5 break-words text-sm text-[var(--text-slate)]">{r.note}</div>}
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex shrink-0 gap-2">
                   {resolvingId === r.id ? (
-                    <Loader2 size={15} className="animate-spin text-[var(--text-slate-light)]" />
+                    <Loader2 size={18} className="animate-spin text-[var(--text-slate-light)]" />
                   ) : (
                     <>
-                      <button
-                        onClick={() => onResolve(r.id, "approuvee")}
-                        className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg text-white"
-                        style={{ backgroundColor: COLORS.green }}
-                      >
-                        <Check size={13} /> Approuver
+                      <button onClick={() => onResolve(r, "approuvee")} className="btn btn-succes btn-petit flex-1 sm:flex-none">
+                        <Check size={14} /> Approuver
                       </button>
-                      <button
-                        onClick={() => onResolve(r.id, "refusee")}
-                        className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg text-white"
-                        style={{ backgroundColor: COLORS.red }}
-                      >
-                        <X size={13} /> Refuser
+                      <button onClick={() => onResolve(r, "refusee")} className="btn btn-contour btn-petit flex-1 sm:flex-none" style={{ color: COLORS.red }}>
+                        <X size={14} /> Refuser
                       </button>
                     </>
                   )}
@@ -412,149 +257,183 @@ export default function AvancesClient({ vehicles, role }) {
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {isAdmin && (
-        <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6">
-          <div className="text-sm font-semibold mb-5" style={{ color: COLORS.ink }}>Nouvelle entrée</div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Field label="Date">
-              <input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-            </Field>
-            <Field label="Type">
-              <select className={inputClass} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-                <option value="avance_proprietaire">Avance au propriétaire</option>
-                <option value="depense_imprevue">Dépense imprévue (véhicule)</option>
-                <option value="remboursement">Remboursement reçu</option>
-              </select>
-            </Field>
-            <Field label="Montant (FCFA)">
-              <input type="number" className={inputClass} value={form.montant} onChange={(e) => setForm({ ...form, montant: e.target.value })} placeholder="0" />
-            </Field>
-          </div>
-          <div className="mt-4">
-            <Field label="Note">
-              <input className={inputClass} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Ex: réparation moteur, avance pour dépannage familial…" />
-            </Field>
-          </div>
-          <button
-            onClick={onSave}
-            disabled={saving || !form.montant}
-            className="mt-6 flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white disabled:opacity-60"
-            style={{ backgroundColor: COLORS.green }}
-          >
-            {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-            Enregistrer
-          </button>
-        </div>
-      )}
-
-      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] mt-6 overflow-hidden">
-        <div className="px-5 py-4 text-sm font-semibold border-b" style={{ color: COLORS.ink, borderColor: COLORS.line }}>
-          Historique
-        </div>
-        {loading ? (
-          <div className="px-5 py-6 text-sm text-[var(--text-slate-light)] flex items-center gap-2">
-            <Loader2 size={14} className="animate-spin" /> Chargement…
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-[var(--text-slate-light)]">Aucune entrée pour ce véhicule.</div>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        {/* ------------------------------------------------ Formulaire */}
+        {isAdmin ? (
+          <section className="carte p-4 sm:p-6">
+            <h2 className="mb-5 flex items-center gap-2 text-sm font-semibold text-[var(--text-ink)]">
+              <Plus size={16} color={COLORS.fleet} /> Nouvelle ligne
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Champ label="Type" className="sm:col-span-2">
+                <select className="champ" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                  {Object.entries(TYPES).map(([id, t]) => <option key={id} value={id}>{t.label}</option>)}
+                </select>
+              </Champ>
+              <Champ label="Date">
+                <input type="date" className="champ" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+              </Champ>
+              <Champ label="Montant (FCFA)">
+                <input type="number" inputMode="numeric" min={0} className="champ font-figures" value={form.montant} onChange={(e) => setForm({ ...form, montant: e.target.value })} placeholder="0" />
+              </Champ>
+              <Champ label="Motif" className="sm:col-span-2">
+                <input className="champ" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Réparation moteur, dépannage familial…" />
+              </Champ>
+            </div>
+            <button onClick={onSave} disabled={saving || !form.montant} className="btn btn-succes mt-5 w-full sm:w-auto">
+              {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              Enregistrer
+            </button>
+          </section>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                  {["Date", "Type", "Montant", "Statut", "Note", ...(isAdmin ? [""] : [])].map((h) => (
-                    <th key={h} className="text-left px-5 py-2.5 font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="border-t"
-                    style={{ borderColor: COLORS.line, opacity: estReglee(r) ? 0.55 : 1 }}
-                  >
-                    <td className="px-5 py-2 font-mono">{r.date}</td>
-                    <td className="px-5 py-2">
-                      <span
-                        className="text-xs font-medium px-2 py-0.5 rounded-full"
-                        style={{
-                          backgroundColor:
-                            r.type === "avance_proprietaire" ? "rgba(31,78,120,0.1)" :
-                            r.type === "remboursement" ? "rgba(30,122,95,0.1)" : "rgba(201,134,43,0.1)",
-                          color: r.type === "avance_proprietaire" ? COLORS.fleet : r.type === "remboursement" ? COLORS.green : COLORS.amber,
-                        }}
-                      >
-                        {TYPE_LABEL[r.type]}
-                      </span>
-                    </td>
-                    <td className="px-5 py-2 font-mono font-semibold">{fmt(r.montant)} F</td>
-                    <td className="px-5 py-2 whitespace-nowrap">
-                      {estReglee(r) ? (
-                        <span
-                          className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: "rgba(30,122,95,0.12)", color: COLORS.green }}
-                          title={
-                            r.regularisee_auto
-                              ? `Réglée par le paiement de ${fmtPeriode(r.regularisee_periode)}`
-                              : r.regularisee_note || "Réglée manuellement"
-                          }
-                        >
-                          <CheckCircle2 size={12} /> Réglée
+          <section className="carte p-4 sm:p-6">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-ink)]">
+              <Send size={15} color={COLORS.fleet} /> Demander une avance
+            </h2>
+            <p className="mb-5 mt-1 text-xs text-[var(--text-slate-light)]">
+              Votre demande est transmise au gestionnaire, qui l&apos;approuve ou la refuse.
+            </p>
+            <div className="grid grid-cols-1 gap-4">
+              <Champ label="Montant souhaité (FCFA)">
+                <input type="number" inputMode="numeric" min={0} className="champ font-figures" value={requestForm.montant} onChange={(e) => setRequestForm({ ...requestForm, montant: e.target.value })} placeholder="0" />
+              </Champ>
+              <Champ label="Motif">
+                <input className="champ" value={requestForm.note} onChange={(e) => setRequestForm({ ...requestForm, note: e.target.value })} placeholder="Besoin urgent, frais de scolarité…" />
+              </Champ>
+            </div>
+            <button onClick={onSendRequest} disabled={saving || !requestForm.montant} className="btn btn-primaire mt-5 w-full sm:w-auto">
+              {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+              Envoyer la demande
+            </button>
+
+            {requests.length > 0 && (
+              <div className="mt-6 border-t border-[var(--border-line)] pt-5">
+                <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-slate)]">Vos demandes</h3>
+                <div className="flex flex-col gap-2">
+                  {requests.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--bg-page)] px-3 py-2.5">
+                      <div className="min-w-0">
+                        <span className="font-figures text-sm font-semibold text-[var(--text-ink)]">{fmtF(r.montant)}</span>
+                        {r.note && <div className="truncate text-xs text-[var(--text-slate)]">{r.note}</div>}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="pastille" style={{ backgroundColor: `color-mix(in srgb, ${STATUS_COLOR[r.status]} 14%, transparent)`, color: STATUS_COLOR[r.status] }}>
+                          {STATUS_LABEL[r.status]}
                         </span>
-                      ) : (
-                        <span className="text-xs text-[var(--text-slate-light)]">En cours</span>
-                      )}
-                      {estReglee(r) && (
-                        <div className="text-[10px] text-[var(--text-slate-light)] mt-0.5">
-                          {r.regularisee_auto ? (
-                            `paiement ${fmtPeriode(r.regularisee_periode)}`
-                          ) : (
-                            <>
-                              {r.regularisee_note || "réglée à la main"}
-                              <span className="block" style={{ color: COLORS.amber }}>
-                                retirée des décomptes
+                        {r.status === "en_attente" && (
+                          <button onClick={() => onCancelRequest(r)} aria-label="Annuler la demande" title="Annuler la demande" className="btn-icone danger h-8 w-8">
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ------------------------------------------------ Historique */}
+        <section className="carte min-w-0 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-line)] px-4 py-3.5 sm:px-5">
+            <h2 className="text-sm font-semibold text-[var(--text-ink)]">Historique</h2>
+            <div className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-line)] bg-[var(--bg-page)] p-1" role="tablist" aria-label="Filtrer">
+              {[
+                { id: "toutes", label: `Toutes ${rows.length}` },
+                { id: "en_cours", label: `En cours ${totals.nbEnCours}` },
+                { id: "reglees", label: `Réglées ${totals.nbReglees}` },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  role="tab"
+                  aria-selected={filtre === f.id}
+                  onClick={() => setFiltre(f.id)}
+                  className="rounded-lg px-2.5 py-1 text-xs font-semibold"
+                  style={{
+                    backgroundColor: filtre === f.id ? "var(--bg-surface)" : "transparent",
+                    color: filtre === f.id ? COLORS.ink : "var(--text-slate-light)",
+                    boxShadow: filtre === f.id ? "var(--shadow-card)" : "none",
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {loading ? (
+            <Chargement className="p-4 sm:p-5" />
+          ) : visibles.length === 0 ? (
+            <Vide icone={HandCoins} titre={rows.length === 0 ? "Aucune avance ni dépense" : "Aucune ligne dans ce filtre"}>
+              {rows.length === 0 ? "Les lignes enregistrées pour ce véhicule apparaîtront ici." : null}
+            </Vide>
+          ) : (
+            <ul className="divide-y divide-[var(--border-line)]">
+              {visibles.map((r) => {
+                const t = TYPES[r.type] || TYPES.avance_proprietaire;
+                const reglee = estReglee(r);
+                return (
+                  <li key={r.id} className="px-4 py-3.5 sm:px-5" style={{ opacity: reglee ? 0.72 : 1 }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="pastille" style={{ backgroundColor: `color-mix(in srgb, ${t.couleur} 13%, transparent)`, color: t.couleur }}>
+                            {t.court}
+                          </span>
+                          <span className="whitespace-nowrap text-xs text-[var(--text-slate)]" title={r.date}>{fmtJour(r.date)}</span>
+                        </div>
+                        {r.note && <div className="mt-1.5 break-words text-sm text-[var(--text-ink)]">{r.note}</div>}
+                        <div className="mt-1.5 text-[11px] leading-snug">
+                          {reglee ? (
+                            <span className="inline-flex flex-wrap items-center gap-x-1.5" style={{ color: COLORS.green }}>
+                              <CheckCircle2 size={12} className="shrink-0" />
+                              <span className="font-medium">Réglée</span>
+                              <span className="text-[var(--text-slate-light)]">
+                                {r.regularisee_auto
+                                  ? `· par le paiement de ${fmtPeriode(r.regularisee_periode)}`
+                                  : `· ${r.regularisee_note || "à la main"} · retirée des décomptes`}
                               </span>
-                            </>
+                            </span>
+                          ) : (
+                            <span className="text-[var(--text-slate-light)]">En cours</span>
                           )}
                         </div>
-                      )}
-                    </td>
-                    <td className="px-5 py-2 text-[var(--text-slate)]">{r.note}</td>
-                    {isAdmin && (
-                      <td className="px-5 py-2">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => onToggleStatut(r)}
-                            disabled={saving}
-                            title={estReglee(r) ? "Remettre en cours" : "Marquer comme réglée"}
-                            className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg border whitespace-nowrap disabled:opacity-50"
-                            style={{
-                              borderColor: COLORS.line,
-                              color: estReglee(r) ? "var(--text-slate)" : COLORS.green,
-                            }}
-                          >
-                            {estReglee(r) ? <><RotateCcw size={12} /> Rouvrir</> : <><Check size={12} /> Réglée</>}
-                          </button>
-                          <button
-                            onClick={() => onDelete(r.id)}
-                            title="Supprimer définitivement"
-                            className="text-[var(--text-slate-light)] hover:text-[var(--red)]"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                      </div>
+
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        <div
+                          className="font-figures whitespace-nowrap text-base font-bold"
+                          style={{ color: r.type === "remboursement" ? COLORS.green : COLORS.ink, textDecoration: reglee ? "line-through" : "none", textDecorationColor: "var(--text-slate-light)" }}
+                        >
+                          {r.type === "remboursement" ? "+ " : ""}{fmtF(r.montant)}
                         </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                        {isAdmin && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => onToggleStatut(r)}
+                              disabled={saving}
+                              className="btn btn-contour btn-petit"
+                              style={{ color: reglee ? "var(--text-slate)" : COLORS.green }}
+                            >
+                              {reglee ? <><RotateCcw size={13} /> Rouvrir</> : <><Check size={13} /> Réglée</>}
+                            </button>
+                            <button onClick={() => onDelete(r)} disabled={saving} aria-label="Supprimer" title="Supprimer définitivement" className="btn-icone danger h-8 w-8">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       </div>
     </main>
   );

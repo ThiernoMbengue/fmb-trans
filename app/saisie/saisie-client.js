@@ -1,65 +1,83 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
-import { Save, Pencil, Trash2, X, Loader2, AlertCircle, CalendarSearch, Repeat, CalendarRange, MessageSquareText, ChevronRight } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Save, Pencil, Trash2, X, Loader2, AlertCircle, Search, Repeat, CalendarRange,
+  MessageSquareText, ChevronRight, ChevronDown, ClipboardList, Plus, Bus, KeyRound,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { lireTout } from "@/lib/supabase/lire-tout";
+import { fmt, fmtF, fmtJour, fmtPeriode, todayISO, ajouterJours, plageDeJours } from "@/lib/format";
+import { EnTete, SelecteurVehicule, Champ, Bandeau, Vide, Chargement, useToast, useConfirm } from "@/components/ui";
 import { saveEntry, deleteEntry, saveLocationRange } from "./actions";
 
-const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet)", green: "var(--green)", red: "var(--red)", line: "var(--border-line)" };
-const inputClass =
-  "w-full text-sm bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30";
-const fmt = (n) => Math.round(Number(n) || 0).toLocaleString("fr-FR").replace(/,/g, " ");
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet-bright)", green: "var(--green)", red: "var(--red)", amber: "var(--amber)", line: "var(--border-line)" };
 
-function Field({ label, children, hint }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-[var(--text-slate)]">{label}</span>
-      {children}
-      {hint && <span className="text-[11px] text-[var(--text-slate-light)]">{hint}</span>}
-    </label>
-  );
-}
-
-const MOIS_LONG = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
-const fmtMois = (cle) => {
-  const [y, m] = cle.split("-");
-  return `${MOIS_LONG[Number(m) - 1]} ${y}`;
-};
-
-function Detail({ label, valeur, legende, accent }) {
-  return (
-    <div className="rounded-xl bg-[var(--bg-surface)] p-3 min-w-0">
-      <div className="text-[11px] text-[var(--text-slate)] mb-0.5">{label}</div>
-      <div className="text-sm font-semibold break-words" style={{ color: accent || COLORS.ink }}>{valeur}</div>
-      {legende && <div className="text-[11px] text-[var(--text-slate-light)] mt-1 break-words">{legende}</div>}
-    </div>
-  );
-}
+const majuscule = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const emptyForm = (chauffeur, date) => ({
   date, receveur: chauffeur || "", recette: "", gazoil: "", gazoilNote: "Gazoil",
   autres: "", autresNote: "", totalCaisse: "", net: "", sansChauffeur: false, note: "",
 });
 
+const formDe = (e) => ({
+  date: e.date, receveur: e.receveur || "", recette: String(e.recette ?? ""),
+  gazoil: String(e.gazoil ?? ""), gazoilNote: e.gazoil_note || "",
+  autres: String(e.autres ?? ""), autresNote: e.autres_note || "",
+  totalCaisse: String(e.total_caisse ?? ""), net: String(e.net ?? ""),
+  sansChauffeur: e.sans_chauffeur === true,
+  note: e.note || "",
+});
+
+function Detail({ label, valeur, legende, accent }) {
+  return (
+    <div className="min-w-0 rounded-xl bg-[var(--bg-surface)] p-3">
+      <div className="mb-0.5 text-[11px] text-[var(--text-slate)]">{label}</div>
+      <div className="font-figures text-sm font-semibold" style={{ color: accent || COLORS.ink }}>{valeur}</div>
+      {legende && <div className="mt-1 break-words text-[11px] text-[var(--text-slate-light)]">{legende}</div>}
+    </div>
+  );
+}
+
+// Champ de montant : clavier numérique sur mobile, pas de valeur négative.
+function Montant({ value, onChange, className = "", ...rest }) {
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min={0}
+      step="any"
+      className={"champ font-figures " + className}
+      value={value}
+      onChange={onChange}
+      {...rest}
+    />
+  );
+}
+
 export default function SaisieClient({ vehicles }) {
   const supabase = createClient();
+  const toast = useToast();
+  const confirmer = useConfirm();
+  const formulaire = useRef(null);
+
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
   const vehicle = vehicles.find((v) => v.id === vehicleId) || null;
 
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState(null);
   const [form, setForm] = useState(null);
   const [editingDate, setEditingDate] = useState(null);
-  const [searchDate, setSearchDate] = useState("");
-  // Date de la ligne dépliée dans l'historique, ou null.
+
+  // Historique
   const [ligneOuverte, setLigneOuverte] = useState(null);
   const [moisFiltre, setMoisFiltre] = useState("tous");
   const [recherche, setRecherche] = useState("");
+  const [dateFiltre, setDateFiltre] = useState("");
   const [nbAffichees, setNbAffichees] = useState(30);
 
+  // Location sur plusieurs jours
   const [locOpen, setLocOpen] = useState(false);
   const [locDebut, setLocDebut] = useState("");
   const [locFin, setLocFin] = useState("");
@@ -69,19 +87,14 @@ export default function SaisieClient({ vehicles }) {
   const [locOverwrite, setLocOverwrite] = useState(false);
   const [locSaving, setLocSaving] = useState(false);
 
-  const showToast = (msg, type = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), type === "success" ? 2800 : 8000);
-  };
-
   const loadEntries = async (vId) => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("entries")
-      .select("*")
-      .eq("vehicle_id", vId)
-      .order("date", { ascending: true });
-    if (!error) setEntries(data || []);
+    // Lecture paginée : un véhicule dépasse 1 000 saisies en moins de trois ans.
+    const { data, error } = await lireTout(() =>
+      supabase.from("entries").select("*").eq("vehicle_id", vId).order("date", { ascending: true })
+    );
+    if (error) toast("Chargement impossible : " + error.message, "error");
+    else setEntries(data || []);
     setLoading(false);
   };
 
@@ -91,15 +104,13 @@ export default function SaisieClient({ vehicles }) {
 
   const lastDate = entries[entries.length - 1]?.date;
 
+  // Par défaut, le formulaire propose le lendemain de la dernière saisie —
+  // sans jamais dépasser aujourd'hui.
   useEffect(() => {
     if (!vehicle || editingDate) return;
-    let nextDate = todayISO();
-    if (lastDate) {
-      const d = new Date(lastDate + "T00:00:00");
-      d.setDate(d.getDate() + 1);
-      nextDate = d.toISOString().slice(0, 10);
-    }
-    setForm(emptyForm(vehicle.chauffeur, nextDate));
+    const auj = todayISO();
+    const suivante = lastDate ? ajouterJours(lastDate, 1) : auj;
+    setForm(emptyForm(vehicle.chauffeur, suivante > auj ? auj : suivante));
   }, [vehicleId, vehicle, lastDate]); // eslint-disable-line
 
   const updateForm = (patch) => {
@@ -118,16 +129,13 @@ export default function SaisieClient({ vehicles }) {
     });
   };
 
+  const versFormulaire = () =>
+    formulaire.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+
   const startEdit = (e) => {
     setEditingDate(e.date);
-    setForm({
-      date: e.date, receveur: e.receveur || "", recette: String(e.recette ?? ""),
-      gazoil: String(e.gazoil ?? ""), gazoilNote: e.gazoil_note || "",
-      autres: String(e.autres ?? ""), autresNote: e.autres_note || "",
-      totalCaisse: String(e.total_caisse ?? ""), net: String(e.net ?? ""),
-      sansChauffeur: e.sans_chauffeur === true,
-      note: e.note || "",
-    });
+    setForm(formDe(e));
+    versFormulaire();
   };
 
   const cancelEdit = () => {
@@ -135,41 +143,57 @@ export default function SaisieClient({ vehicles }) {
     setForm(emptyForm(vehicle?.chauffeur, todayISO()));
   };
 
+  // Une saisie existe déjà à la date choisie : enregistrer l'écraserait.
+  const existante = useMemo(
+    () => (form?.date && form.date !== editingDate ? entries.find((e) => e.date === form.date) || null : null),
+    [entries, form?.date, editingDate]
+  );
+
   const onSave = async () => {
     if (!vehicleId || !form?.date) return;
+
+    if (existante) {
+      const ok = await confirmer({
+        titre: `Une saisie existe déjà le ${fmtJour(form.date, { annee: true })}`,
+        message: `Elle indique une recette de ${fmtF(existante.recette)} et un net de ${fmtF(existante.net)}.\nL'enregistrer maintenant la remplacera par ce que vous venez de saisir.`,
+        confirmer: "Remplacer",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+
     setSaving(true);
     const res = await saveEntry({ vehicleId, ...form });
     setSaving(false);
-    if (res?.error) {
-      showToast("Erreur: " + res.error, "error");
-    } else if (res?.avertissement) {
-      showToast(res.avertissement, "warning");
-      setEditingDate(null);
-      await loadEntries(vehicleId);
-      const d = new Date(form.date + "T00:00:00");
-      d.setDate(d.getDate() + 1);
-      setForm(emptyForm(vehicle?.chauffeur, d.toISOString().slice(0, 10)));
-    } else {
-      showToast(editingDate ? "Saisie mise à jour" : "Versement enregistré");
-      setEditingDate(null);
-      await loadEntries(vehicleId);
-      const d = new Date(form.date + "T00:00:00");
-      d.setDate(d.getDate() + 1);
-      setForm(emptyForm(vehicle?.chauffeur, d.toISOString().slice(0, 10)));
-    }
+    if (res?.error) return toast("Enregistrement impossible : " + res.error, "error");
+
+    if (res?.avertissement) toast(res.avertissement, "warning");
+    else toast(editingDate || existante ? "Saisie mise à jour" : "Versement enregistré");
+
+    const suivante = ajouterJours(form.date, 1);
+    setEditingDate(null);
+    await loadEntries(vehicleId);
+    setForm(emptyForm(vehicle?.chauffeur, suivante > todayISO() ? todayISO() : suivante));
   };
 
-  const onDelete = async (date) => {
+  const onDelete = async (e) => {
     if (!vehicleId) return;
+    const ok = await confirmer({
+      titre: `Supprimer la saisie du ${fmtJour(e.date, { annee: true })} ?`,
+      message: `Recette ${fmtF(e.recette)}, net versé ${fmtF(e.net)}.\nLa suppression est définitive, et les décomptes du mois seront recalculés.`,
+      confirmer: "Supprimer",
+      danger: true,
+    });
+    if (!ok) return;
+
     setSaving(true);
-    const res = await deleteEntry(vehicleId, date);
+    const res = await deleteEntry(vehicleId, e.date);
     setSaving(false);
-    if (res?.error) showToast("Erreur: " + res.error, "error");
-    else {
-      showToast("Saisie supprimée");
-      await loadEntries(vehicleId);
-      if (editingDate === date) cancelEdit();
-    }
+    if (res?.error) return toast("Suppression impossible : " + res.error, "error");
+    toast("Saisie supprimée");
+    setLigneOuverte(null);
+    await loadEntries(vehicleId);
+    if (editingDate === e.date) cancelEdit();
   };
 
   // Si les lignes chargées ne portent pas la clé, c'est que la colonne
@@ -183,7 +207,6 @@ export default function SaisieClient({ vehicles }) {
     return manque;
   }, [entries]);
 
-  // Mois disponibles, du plus récent au plus ancien.
   const moisDisponibles = useMemo(
     () => [...new Set(entries.map((e) => e.date.slice(0, 7)))].sort().reverse(),
     [entries]
@@ -195,39 +218,24 @@ export default function SaisieClient({ vehicles }) {
     const terme = recherche.trim().toLowerCase();
     return [...entries]
       .reverse()
-      .filter((e) => moisFiltre === "tous" || e.date.startsWith(moisFiltre))
+      .filter((e) => !dateFiltre || e.date === dateFiltre)
+      .filter((e) => dateFiltre || moisFiltre === "tous" || e.date.startsWith(moisFiltre))
       .filter((e) => {
         if (!terme) return true;
-        const champs = [e.receveur, e.note, e.gazoil_note, e.autres_note, e.date];
-        return champs.some((c) => (c || "").toLowerCase().includes(terme));
+        return [e.receveur, e.note, e.gazoil_note, e.autres_note].some((c) => (c || "").toLowerCase().includes(terme));
       });
-  }, [entries, moisFiltre, recherche]);
+  }, [entries, moisFiltre, recherche, dateFiltre]);
 
   // Remettre le compteur à zéro quand le filtre change, sinon on garderait
   // « 90 affichées » sur une liste qui n'en compte plus que 12.
   useEffect(() => {
     setNbAffichees(30);
     setLigneOuverte(null);
-  }, [moisFiltre, recherche, vehicleId]);
-  const searchResult = useMemo(
-    () => (searchDate ? entries.find((e) => e.date === searchDate) || null : undefined),
-    [entries, searchDate]
-  );
+  }, [moisFiltre, recherche, dateFiltre, vehicleId]);
 
-  const locDates = useMemo(() => {
-    if (!locDebut || !locFin || locDebut > locFin) return [];
-    const dates = [];
-    let d = new Date(locDebut + "T00:00:00");
-    const end = new Date(locFin + "T00:00:00");
-    let guard = 0;
-    while (d <= end && guard < 400) {
-      dates.push(d.toISOString().slice(0, 10));
-      d.setDate(d.getDate() + 1);
-      guard++;
-    }
-    return dates;
-  }, [locDebut, locFin]);
+  const filtreActif = Boolean(recherche || dateFiltre || moisFiltre !== "tous");
 
+  const locDates = useMemo(() => plageDeJours(locDebut, locFin), [locDebut, locFin]);
   const locExisting = useMemo(
     () => locDates.filter((d) => entries.some((e) => e.date === d)),
     [locDates, entries]
@@ -246,459 +254,361 @@ export default function SaisieClient({ vehicles }) {
       skipDates: locOverwrite ? [] : locExisting,
     });
     setLocSaving(false);
-    if (res?.error) {
-      showToast("Erreur: " + res.error, "error");
-    } else {
-      const skipped = locOverwrite ? 0 : locExisting.length;
-      if (res.avertissement) showToast(res.avertissement, "warning");
-      else showToast(`${res.count} jour(s) enregistré(s) pour la location${skipped ? `, ${skipped} déjà saisi(s) ignoré(s)` : ""}`);
-      setLocDebut(""); setLocFin(""); setLocMontant(""); setLocReceveur(""); setLocNote("Location"); setLocOverwrite(false);
-      await loadEntries(vehicleId);
-    }
+    if (res?.error) return toast("Enregistrement impossible : " + res.error, "error");
+
+    const ignores = locOverwrite ? 0 : locExisting.length;
+    if (res.avertissement) toast(res.avertissement, "warning");
+    else toast(`${res.count} jour${res.count > 1 ? "s" : ""} de location enregistré${res.count > 1 ? "s" : ""}${ignores ? ` — ${ignores} déjà saisi${ignores > 1 ? "s" : ""}, laissé${ignores > 1 ? "s" : ""} tel${ignores > 1 ? "s" : ""} quel${ignores > 1 ? "s" : ""}` : ""}`);
+    setLocDebut(""); setLocFin(""); setLocMontant(""); setLocReceveur(""); setLocNote("Location"); setLocOverwrite(false);
+    setLocOpen(false);
+    await loadEntries(vehicleId);
   };
 
   if (!vehicles.length) {
     return (
-      <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto text-sm text-[var(--text-slate-light)]">
-        Aucun véhicule enregistré. Ajoute d'abord un véhicule dans l'onglet « Véhicules ».
+      <main className="page">
+        <EnTete titre="Saisie des versements" />
+        <div className="carte">
+          <Vide icone={Bus} titre="Aucun véhicule enregistré">
+            Ajoutez d&apos;abord un véhicule depuis l&apos;onglet « Véhicules ».
+          </Vide>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="px-6 md:px-10 py-8 max-w-3xl mx-auto">
-      {toast && (
-        <div
-          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-start gap-2 text-white max-w-[90vw]"
-          style={{
-            backgroundColor:
-              toast.type === "error" ? COLORS.red : toast.type === "warning" ? COLORS.amber : COLORS.green,
-          }}
-        >
-          {toast.type !== "success" && <AlertCircle size={16} className="shrink-0 mt-0.5" />}
-          {toast.msg}
-        </div>
-      )}
+    <main className="page animate-fade-up">
+      <EnTete
+        titre="Saisie des versements"
+        description="Enregistrez la recette et les dépenses de la journée. Le net versé au propriétaire se calcule tout seul."
+      />
 
       {migrationsManquantes.length > 0 && (
-        <div
-          className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-5 border text-xs leading-relaxed"
-          style={{
-            borderColor: "color-mix(in srgb, var(--amber) 40%, transparent)",
-            backgroundColor: "color-mix(in srgb, var(--amber) 8%, transparent)",
-            color: "var(--text-slate)",
-          }}
-        >
-          <AlertCircle size={16} color={COLORS.amber} className="mt-0.5 shrink-0" />
-          <div>
-            <strong style={{ color: COLORS.ink }}>
-              Une migration n&apos;a pas encore été exécutée.
-            </strong>{" "}
-            Les remarques que vous saisissez ne sont pas conservées. Ouvrez Supabase &gt; SQL Editor
-            et exécutez {migrationsManquantes.map((m) => <code key={m} className="font-mono">{m}</code>).reduce((a, b) => [a, " puis ", b])},
-            puis rechargez cette page.
-          </div>
-        </div>
+        <Bandeau couleur="var(--amber)" icone={AlertCircle} className="mb-5">
+          <strong className="text-[var(--text-ink)]">Une migration n&apos;a pas encore été exécutée.</strong>{" "}
+          Les remarques saisies ne sont pas conservées. Dans Supabase &gt; SQL Editor, exécutez{" "}
+          {migrationsManquantes.map((m, i) => (
+            <Fragment key={m}>{i > 0 && " puis "}<code className="rounded bg-[var(--bg-page)] px-1 py-0.5 text-[11px]">{m}</code></Fragment>
+          ))}, puis rechargez cette page.
+        </Bandeau>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <select
-          value={vehicleId || ""}
-          onChange={(e) => { setVehicleId(e.target.value); setEditingDate(null); }}
-          className="text-sm font-medium bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2"
-        >
-          {vehicles.map((v) => (
-            <option key={v.id} value={v.id}>{v.marque} — {v.immatriculation}</option>
-          ))}
-        </select>
-        {vehicle && (
-          <div className="text-xs text-[var(--text-slate-light)]">{vehicle.proprietaire} · chauffeur {vehicle.chauffeur}</div>
-        )}
-      </div>
+      <SelecteurVehicule
+        className="mb-5"
+        vehicles={vehicles}
+        value={vehicleId}
+        onChange={(id) => { setVehicleId(id); setEditingDate(null); }}
+      />
 
-      {form && (
-        <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 md:p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>
-              {editingDate ? `Modifier la saisie du ${editingDate}` : "Nouvelle saisie du jour"}
-            </div>
-            {editingDate && (
-              <button onClick={cancelEdit} className="text-xs text-[var(--text-slate-light)] flex items-center gap-1">
-                <X size={13} /> Annuler
-              </button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Field label="Date">
-              <input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-            </Field>
-            <Field label="Nom du receveur / chauffeur">
-              <input className={inputClass} value={form.receveur} onChange={(e) => setForm({ ...form, receveur: e.target.value })} />
-            </Field>
-            <Field label="Recette totale (FCFA)">
-              <input type="number" className={inputClass} value={form.recette} onChange={(e) => updateForm({ recette: e.target.value })} />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <Field label="Gazoil (FCFA)">
-              <input type="number" className={inputClass} value={form.gazoil} onChange={(e) => updateForm({ gazoil: e.target.value })} />
-            </Field>
-            <Field label="Remarque gazoil">
-              <input className={inputClass} value={form.gazoilNote} onChange={(e) => setForm({ ...form, gazoilNote: e.target.value })} />
-            </Field>
-            <Field label="Autres dépenses (FCFA)">
-              <input type="number" className={inputClass} value={form.autres} onChange={(e) => updateForm({ autres: e.target.value })} />
-            </Field>
-            <Field label="Remarque autres dépenses">
-              <input className={inputClass} value={form.autresNote} onChange={(e) => setForm({ ...form, autresNote: e.target.value })} />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <Field label="Total caisse (FCFA)" hint="Calculé automatiquement, modifiable">
-              <input type="number" className={inputClass} value={form.totalCaisse} onChange={(e) => setForm({ ...form, totalCaisse: e.target.value })} />
-            </Field>
-            <Field label="Net versé au propriétaire (FCFA)" hint="Calculé automatiquement, modifiable">
-              <input type="number" className={inputClass + " font-semibold"} value={form.net} onChange={(e) => setForm({ ...form, net: e.target.value })} />
-            </Field>
-          </div>
-
-          <div className="mt-4">
-            <Field
-              label="Remarque sur la journée"
-              hint="Facultatif — ce qui explique la journée : panne, retard, client particulier, recette inhabituelle. Visible depuis le tableau de bord."
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,10fr)_minmax(0,11fr)]">
+        {/* ------------------------------------------------ Formulaire */}
+        <div className="flex min-w-0 flex-col gap-5">
+          {form && (
+            <section
+              ref={formulaire}
+              className="carte scroll-mt-20 p-4 sm:p-6"
+              style={editingDate ? { borderColor: "color-mix(in srgb, var(--amber) 55%, var(--border-line))" } : undefined}
             >
-              <textarea
-                rows={3}
-                className={inputClass + " resize-y min-h-[70px]"}
-                value={form.note}
-                onChange={(e) => setForm({ ...form, note: e.target.value })}
-                placeholder="Ex : crevaison à Yeumbeul, immobilisé 3 h — recette plus faible que d'habitude"
-              />
-            </Field>
-          </div>
-
-          {/* Sur une location sans chauffeur, aucun salaire n'est dû : le
-              dossier investisseur s'appuie sur ce marqueur. */}
-          <label className="flex items-start gap-2.5 mt-4 bg-[var(--bg-page)] rounded-lg px-4 py-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={form.sansChauffeur === true}
-              onChange={(e) => setForm({ ...form, sansChauffeur: e.target.checked })}
-            />
-            <span className="text-xs leading-relaxed text-[var(--text-slate)]">
-              <strong style={{ color: COLORS.ink }}>Location sans chauffeur</strong> — le client
-              conduit lui-même et paie son carburant. Aucun salaire de chauffeur n&apos;est compté
-              sur cette journée.
-            </span>
-          </label>
-
-          <button
-            onClick={onSave}
-            disabled={saving || !form.date}
-            className="mt-6 flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white disabled:opacity-60"
-            style={{ backgroundColor: COLORS.green }}
-          >
-            {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-            {editingDate ? "Mettre à jour" : "Enregistrer le versement"}
-          </button>
-        </div>
-      )}
-
-      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 mt-6">
-        <button onClick={() => setLocOpen((o) => !o)} className="flex items-center gap-2 text-sm font-semibold w-full text-left" style={{ color: COLORS.ink }}>
-          <CalendarRange size={16} />
-          Saisir une location sur plusieurs jours
-          <span className="ml-auto text-xs font-normal text-[var(--text-slate-light)]">{locOpen ? "Réduire" : "Ouvrir"}</span>
-        </button>
-        <p className="text-xs text-[var(--text-slate-light)] mt-1">Remplit automatiquement chaque jour de la période avec le même montant (ex : 15 000 F/jour du 24 juillet au 21 août).</p>
-
-        {locOpen && (
-          <div className="mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <Field label="Du">
-                <input type="date" className={inputClass} value={locDebut} onChange={(e) => setLocDebut(e.target.value)} />
-              </Field>
-              <Field label="Au">
-                <input type="date" className={inputClass} value={locFin} onChange={(e) => setLocFin(e.target.value)} />
-              </Field>
-              <Field label="Montant / jour (FCFA)">
-                <input type="number" className={inputClass} value={locMontant} onChange={(e) => setLocMontant(e.target.value)} placeholder="15000" />
-              </Field>
-              <Field label="Receveur / locataire">
-                <input className={inputClass} value={locReceveur} onChange={(e) => setLocReceveur(e.target.value)} placeholder={vehicle?.chauffeur || ""} />
-              </Field>
-            </div>
-            <div className="mt-3">
-              <Field label="Note (apparaîtra sur chaque jour)">
-                <input className={inputClass} value={locNote} onChange={(e) => setLocNote(e.target.value)} placeholder="Location" />
-              </Field>
-            </div>
-
-            {locDates.length > 0 && (
-              <div className="mt-4 bg-[var(--bg-page)] rounded-lg px-4 py-3 text-sm">
-                <div className="text-[var(--text-slate)]">
-                  <strong style={{ color: COLORS.ink }}>{locDates.length} jour(s)</strong> seront enregistrés à {fmt(locMontant || 0)} F/jour
-                  {locMontant ? ` (total ${fmt(locDates.length * (Number(locMontant) || 0))} F)` : ""}.
-                </div>
-                {locExisting.length > 0 && (
-                  <label className="flex items-center gap-2 mt-2 text-xs text-[var(--amber)]">
-                    <input type="checkbox" checked={locOverwrite} onChange={(e) => setLocOverwrite(e.target.checked)} />
-                    {locExisting.length} jour(s) sur cette période ont déjà une saisie — cocher pour les écraser, sinon ils seront ignorés.
-                  </label>
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-ink)]">
+                  {editingDate ? <Pencil size={15} color={COLORS.amber} /> : <Plus size={16} color={COLORS.fleet} />}
+                  {editingDate ? `Modifier la saisie du ${fmtJour(editingDate, { annee: true })}` : "Nouvelle saisie"}
+                </h2>
+                {editingDate && (
+                  <button onClick={cancelEdit} className="btn btn-discret btn-petit">
+                    <X size={13} /> Annuler
+                  </button>
                 )}
               </div>
-            )}
 
-            <button
-              onClick={onSaveLocation}
-              disabled={locSaving || locDates.length === 0 || !locMontant}
-              className="mt-4 flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white disabled:opacity-60"
-              style={{ backgroundColor: COLORS.fleet }}
-            >
-              {locSaving ? <Loader2 size={15} className="animate-spin" /> : <Repeat size={15} />}
-              Enregistrer la location ({locDates.length} jour{locDates.length > 1 ? "s" : ""})
-            </button>
-          </div>
-        )}
-      </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Champ label="Date">
+                  <input type="date" className="champ" value={form.date}
+                    onChange={(e) => setForm({ ...form, date: e.target.value })} />
+                </Champ>
+                <Champ label="Receveur / chauffeur">
+                  <input className="champ" value={form.receveur} autoComplete="off"
+                    onChange={(e) => setForm({ ...form, receveur: e.target.value })} />
+                </Champ>
+              </div>
 
-      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5 mt-6">
-        <div className="flex items-center gap-2 text-sm font-semibold mb-3" style={{ color: COLORS.ink }}>
-          <CalendarSearch size={16} /> Rechercher une saisie par date
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            className={inputClass + " max-w-[200px]"}
-            value={searchDate}
-            onChange={(e) => setSearchDate(e.target.value)}
-          />
-          {searchDate && (
-            <button onClick={() => setSearchDate("")} className="text-xs text-[var(--text-slate-light)] flex items-center gap-1">
-              <X size={12} /> Effacer
-            </button>
+              {existante && (
+                <Bandeau couleur="var(--amber)" icone={AlertCircle} className="mt-3">
+                  <strong className="text-[var(--text-ink)]">Une saisie existe déjà à cette date</strong>{" "}
+                  (recette {fmtF(existante.recette)}). Enregistrer la remplacera.{" "}
+                  <button onClick={() => startEdit(existante)} className="font-semibold underline underline-offset-2" style={{ color: COLORS.fleet }}>
+                    Ouvrir la saisie existante
+                  </button>
+                </Bandeau>
+              )}
+
+              <div className="mt-4">
+                <Champ label="Recette totale (FCFA)">
+                  <Montant className="py-3 text-lg font-semibold sm:text-base" placeholder="0" value={form.recette}
+                    onChange={(e) => updateForm({ recette: e.target.value })} />
+                </Champ>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Champ label="Gazoil (FCFA)">
+                  <Montant placeholder="0" value={form.gazoil} onChange={(e) => updateForm({ gazoil: e.target.value })} />
+                </Champ>
+                <Champ label="Remarque gazoil">
+                  <input className="champ" value={form.gazoilNote} onChange={(e) => setForm({ ...form, gazoilNote: e.target.value })} />
+                </Champ>
+                <Champ label="Autres dépenses (FCFA)">
+                  <Montant placeholder="0" value={form.autres} onChange={(e) => updateForm({ autres: e.target.value })} />
+                </Champ>
+                <Champ label="Remarque autres dépenses">
+                  <input className="champ" placeholder="Parking, lavage, péage…" value={form.autresNote}
+                    onChange={(e) => setForm({ ...form, autresNote: e.target.value })} />
+                </Champ>
+              </div>
+
+              {/* Résultat du calcul, modifiable si la caisse réelle diffère. */}
+              <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl bg-[var(--bg-page)] p-3 sm:gap-4 sm:p-4">
+                <Champ label="Total caisse" aide="Recette − gazoil">
+                  <Montant value={form.totalCaisse} onChange={(e) => setForm({ ...form, totalCaisse: e.target.value })} />
+                </Champ>
+                <Champ label="Net versé au propriétaire" aide="Total caisse − autres">
+                  <Montant className="font-bold" style={{ color: COLORS.green }} value={form.net}
+                    onChange={(e) => setForm({ ...form, net: e.target.value })} />
+                </Champ>
+              </div>
+
+              <div className="mt-4">
+                <Champ
+                  label="Remarque sur la journée"
+                  aide="Facultatif — panne, retard, client particulier, recette inhabituelle."
+                >
+                  <textarea
+                    rows={2}
+                    className="champ min-h-[64px]"
+                    value={form.note}
+                    onChange={(e) => setForm({ ...form, note: e.target.value })}
+                    placeholder="Ex : crevaison à Yeumbeul, immobilisé 3 h"
+                  />
+                </Champ>
+              </div>
+
+              {/* Sur une location sans chauffeur, aucun salaire n'est dû : le
+                  dossier investisseur s'appuie sur ce marqueur. */}
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--border-line)] px-3.5 py-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--fleet-bright)]"
+                  checked={form.sansChauffeur === true}
+                  onChange={(e) => setForm({ ...form, sansChauffeur: e.target.checked })}
+                />
+                <span className="text-xs leading-relaxed text-[var(--text-slate)]">
+                  <strong className="text-[var(--text-ink)]">Location sans chauffeur</strong> — le client
+                  conduit et paie son carburant. Aucun salaire de chauffeur n&apos;est compté ce jour-là.
+                </span>
+              </label>
+
+              <button onClick={onSave} disabled={saving || !form.date} className="btn btn-succes mt-5 w-full py-3 sm:w-auto sm:py-2.5">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                {editingDate ? "Mettre à jour" : "Enregistrer le versement"}
+              </button>
+            </section>
           )}
-        </div>
 
-        {searchResult === null && (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 bg-[var(--bg-page)] rounded-lg px-4 py-3">
-            <span className="text-sm text-[var(--text-slate)]">Aucune saisie trouvée pour le {searchDate}.</span>
+          {/* --------------------------------- Location sur plusieurs jours */}
+          <section className="carte overflow-hidden">
             <button
-              onClick={() => {
-                setEditingDate(null);
-                setForm(emptyForm(vehicle?.chauffeur, searchDate));
-                setSearchDate("");
-                window.scrollTo({ top: 0, behavior: "smooth" });
-              }}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg text-white shrink-0"
-              style={{ backgroundColor: COLORS.fleet }}
+              onClick={() => setLocOpen((o) => !o)}
+              aria-expanded={locOpen}
+              className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-[var(--bg-page)] sm:px-6"
             >
-              + Créer une saisie pour cette date
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 14%, transparent)" }}>
+                <CalendarRange size={17} color={COLORS.fleet} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-[var(--text-ink)]">Location sur plusieurs jours</span>
+                <span className="block text-xs text-[var(--text-slate-light)]">Même montant chaque jour d&apos;une période, sans chauffeur.</span>
+              </span>
+              <ChevronDown size={17} className="shrink-0 text-[var(--text-slate-light)]" style={{ transform: locOpen ? "rotate(180deg)" : "none", transition: "transform 200ms ease" }} />
             </button>
-          </div>
-        )}
 
-        {searchResult && (
-          <div className="mt-4 bg-[var(--bg-page)] rounded-lg px-4 py-3 overflow-x-auto">
-            <table className="w-full text-sm font-mono min-w-[420px]">
-              <thead>
-                <tr>
-                  {["Date", "Recette", "Gazoil", "Autres", "Net versé", ""].map((h) => (
-                    <th key={h} className="text-left font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)] pb-2">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr style={{ color: COLORS.ink }}>
-                  <td className="py-1">{searchResult.date}</td>
-                  <td className="py-1">{fmt(searchResult.recette)}</td>
-                  <td className="py-1">{fmt(searchResult.gazoil)}</td>
-                  <td className="py-1">{fmt(searchResult.autres)}</td>
-                  <td className="py-1 font-semibold">{fmt(searchResult.net)}</td>
-                  <td className="py-1">
-                    <div className="flex items-center gap-3 font-sans">
-                      <button
-                        onClick={() => {
-                          startEdit(searchResult);
-                          setSearchDate("");
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }}
-                        className="flex items-center gap-1 text-xs font-medium"
-                        style={{ color: COLORS.fleet }}
-                      >
-                        <Pencil size={13} /> Modifier
-                      </button>
-                      <button
-                        onClick={() => onDelete(searchResult.date)}
-                        className="flex items-center gap-1 text-xs font-medium"
-                        style={{ color: COLORS.red }}
-                      >
-                        <Trash2 size={13} /> Supprimer
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            {searchResult.note && (
-              <div className="flex items-start gap-2 mt-3 pt-3 border-t text-xs leading-relaxed text-[var(--text-slate)] whitespace-pre-wrap" style={{ borderColor: COLORS.line }}>
-                <MessageSquareText size={14} color={COLORS.fleet} className="mt-0.5 shrink-0" />
-                {searchResult.note}
+            {locOpen && (
+              <div className="border-t border-[var(--border-line)] p-4 sm:p-6">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                  <Champ label="Du">
+                    <input type="date" className="champ" value={locDebut} max={locFin || undefined} onChange={(e) => setLocDebut(e.target.value)} />
+                  </Champ>
+                  <Champ label="Au">
+                    <input type="date" className="champ" value={locFin} min={locDebut || undefined} onChange={(e) => setLocFin(e.target.value)} />
+                  </Champ>
+                  <Champ label="Montant par jour (FCFA)">
+                    <Montant value={locMontant} onChange={(e) => setLocMontant(e.target.value)} placeholder="15000" />
+                  </Champ>
+                  <Champ label="Locataire">
+                    <input className="champ" value={locReceveur} onChange={(e) => setLocReceveur(e.target.value)} placeholder={vehicle?.chauffeur || ""} />
+                  </Champ>
+                  <Champ label="Remarque (reprise sur chaque jour)" className="col-span-2">
+                    <input className="champ" value={locNote} onChange={(e) => setLocNote(e.target.value)} placeholder="Location" />
+                  </Champ>
+                </div>
+
+                {locDates.length > 0 && (
+                  <div className="mt-4 rounded-xl bg-[var(--bg-page)] px-4 py-3 text-sm text-[var(--text-slate)]">
+                    <strong className="text-[var(--text-ink)]">{locDates.length} jour{locDates.length > 1 ? "s" : ""}</strong>{" "}
+                    à {fmtF(locMontant || 0)} par jour
+                    {locMontant ? <> — total <strong className="font-figures text-[var(--text-ink)]">{fmtF(locDates.length * (Number(locMontant) || 0))}</strong></> : ""}.
+                    {locExisting.length > 0 && (
+                      <label className="mt-2 flex cursor-pointer items-start gap-2 text-xs" style={{ color: COLORS.amber }}>
+                        <input type="checkbox" className="mt-0.5 accent-[var(--amber)]" checked={locOverwrite} onChange={(e) => setLocOverwrite(e.target.checked)} />
+                        <span>
+                          {locExisting.length} jour{locExisting.length > 1 ? "s ont" : " a"} déjà une saisie sur cette période.
+                          Cochez pour {locExisting.length > 1 ? "les" : "la"} remplacer ; sinon {locExisting.length > 1 ? "ils seront laissés tels quels" : "il sera laissé tel quel"}.
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                <button onClick={onSaveLocation} disabled={locSaving || locDates.length === 0 || !locMontant} className="btn btn-primaire mt-4 w-full sm:w-auto">
+                  {locSaving ? <Loader2 size={15} className="animate-spin" /> : <Repeat size={15} />}
+                  Enregistrer {locDates.length > 0 ? `${locDates.length} jour${locDates.length > 1 ? "s" : ""}` : "la location"}
+                </button>
               </div>
             )}
-          </div>
-        )}
-      </div>
+          </section>
+        </div>
 
-      <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] mt-6 overflow-hidden">
-        <div className="px-5 py-4 border-b" style={{ borderColor: COLORS.line }}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>
-              Historique des saisies
+        {/* ------------------------------------------------ Historique */}
+        <section className="carte min-w-0 overflow-hidden">
+          <div className="border-b border-[var(--border-line)] p-4 sm:px-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-ink)]">
+                <ClipboardList size={16} color={COLORS.fleet} /> Historique des saisies
+              </h2>
+              <span className="text-xs text-[var(--text-slate-light)]">
+                {historique.length} saisie{historique.length > 1 ? "s" : ""}
+                {historique.length !== entries.length ? ` sur ${entries.length}` : ""}
+              </span>
             </div>
-            <div className="text-xs text-[var(--text-slate-light)]">
-              {historique.length} saisie{historique.length > 1 ? "s" : ""}
-              {historique.length !== entries.length ? ` sur ${entries.length}` : ""}
-            </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2 mt-3">
-            <select
-              value={moisFiltre}
-              onChange={(e) => setMoisFiltre(e.target.value)}
-              className="text-sm bg-[var(--bg-page)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5"
-            >
-              <option value="tous">Tous les mois</option>
-              {moisDisponibles.map((m) => (
-                <option key={m} value={m}>{fmtMois(m)}</option>
-              ))}
-            </select>
-            <div className="relative flex-1 min-w-[180px]">
-              <CalendarSearch size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-slate-light)]" />
-              <input
-                value={recherche}
-                onChange={(e) => setRecherche(e.target.value)}
-                placeholder="Rechercher dans les remarques, le receveur, la date…"
-                className="w-full text-sm bg-[var(--bg-page)] border border-[var(--border-line)] rounded-lg pl-8 pr-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30"
-              />
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-[auto_auto_minmax(0,1fr)]">
+              <select aria-label="Mois" value={moisFiltre} disabled={Boolean(dateFiltre)} onChange={(e) => setMoisFiltre(e.target.value)} className="champ px-2.5 sm:px-3">
+                <option value="tous">Tous les mois</option>
+                {moisDisponibles.map((m) => <option key={m} value={m}>{majuscule(fmtPeriode(m))}</option>)}
+              </select>
+              <input type="date" aria-label="Aller à une date" title="Aller à une date" value={dateFiltre} onChange={(e) => setDateFiltre(e.target.value)} className="champ px-2.5 sm:px-3" />
+              <div className="relative col-span-2 sm:col-span-1">
+                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-slate-light)]" />
+                <input
+                  type="search"
+                  value={recherche}
+                  onChange={(e) => setRecherche(e.target.value)}
+                  placeholder="Chercher dans les remarques…"
+                  className="champ pl-9"
+                />
+              </div>
             </div>
-            {(recherche || moisFiltre !== "tous") && (
-              <button
-                onClick={() => { setRecherche(""); setMoisFiltre("tous"); }}
-                className="text-xs text-[var(--text-slate-light)] underline underline-offset-2 whitespace-nowrap"
-              >
-                Tout afficher
+            {filtreActif && (
+              <button onClick={() => { setRecherche(""); setMoisFiltre("tous"); setDateFiltre(""); }} className="btn btn-discret btn-petit mt-2 -ml-1">
+                <X size={13} /> Effacer les filtres
               </button>
             )}
           </div>
-        </div>
 
-        {loading ? (
-          <div className="px-5 py-6 text-sm text-[var(--text-slate-light)] flex items-center gap-2">
-            <Loader2 size={14} className="animate-spin" /> Chargement…
-          </div>
-        ) : historique.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-[var(--text-slate-light)]">
-            {entries.length === 0
-              ? "Aucune saisie pour ce véhicule."
-              : "Aucune saisie ne correspond à ce filtre."}
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm font-mono">
+          {loading ? (
+            <Chargement className="p-4 sm:p-5" lignes={8} />
+          ) : historique.length === 0 ? (
+            dateFiltre ? (
+              <Vide icone={Search} titre={`Aucune saisie le ${fmtJour(dateFiltre, { annee: true })}`}>
+                <button
+                  onClick={() => {
+                    setEditingDate(null);
+                    setForm(emptyForm(vehicle?.chauffeur, dateFiltre));
+                    setDateFiltre("");
+                    versFormulaire();
+                  }}
+                  className="btn btn-primaire btn-petit mt-3"
+                >
+                  <Plus size={14} /> Créer la saisie de ce jour
+                </button>
+              </Vide>
+            ) : (
+              <Vide icone={ClipboardList} titre={entries.length === 0 ? "Aucune saisie pour ce véhicule" : "Aucune saisie ne correspond"}>
+                {entries.length === 0 ? "La première saisie apparaîtra ici dès son enregistrement." : "Essayez un autre mois ou un autre mot."}
+              </Vide>
+            )
+          ) : (
+            <>
+              <table className="tableau">
                 <thead>
-                  <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                    {["", "Date", "Receveur", "Recette", "Gazoil", "Autres", "Net versé", ""].map((h, i) => (
-                      <th key={h + i} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
-                    ))}
+                  <tr>
+                    <th className="w-8 !px-0" />
+                    <th className="!pl-1">Date</th>
+                    <th className="num">Recette</th>
+                    <th className="num hidden sm:table-cell">Dépenses</th>
+                    <th className="num">Net versé</th>
                   </tr>
                 </thead>
                 <tbody>
                   {historique.slice(0, nbAffichees).map((e) => {
                     const ouverte = ligneOuverte === e.date;
-                    const aDesDetails = e.note || e.gazoil_note || e.autres_note || e.sans_chauffeur;
+                    const repos = Number(e.recette) === 0;
                     return (
                       <Fragment key={e.date}>
                         <tr
                           onClick={() => setLigneOuverte(ouverte ? null : e.date)}
-                          className="border-t cursor-pointer hover:bg-[var(--bg-page)]"
-                          style={{ borderColor: COLORS.line, color: e.recette === 0 ? "var(--text-slate-light)" : COLORS.ink }}
+                          className="cursor-pointer hover:bg-[var(--bg-page)]"
+                          style={{ color: repos ? "var(--text-slate-light)" : COLORS.ink, backgroundColor: ouverte ? "var(--bg-page)" : undefined }}
                         >
-                          <td className="pl-4 pr-1 py-2 w-6">
-                            <ChevronRight
-                              size={14}
-                              className="transition-transform text-[var(--text-slate-light)]"
-                              style={{ transform: ouverte ? "rotate(90deg)" : "none" }}
-                            />
+                          <td className="!px-0 !pl-3">
+                            <ChevronRight size={15} className="text-[var(--text-slate-light)]" style={{ transform: ouverte ? "rotate(90deg)" : "none", transition: "transform 160ms ease" }} />
                           </td>
-                          <td className="px-5 py-2 whitespace-nowrap">
-                            {e.date}
-                            {e.note && (
-                              <MessageSquareText
-                                size={12}
-                                className="inline-block ml-1.5 -mt-0.5"
-                                color={COLORS.fleet}
-                              />
+                          <td className="whitespace-nowrap !pl-1" title={e.date}>
+                            <button
+                              className="text-left"
+                              aria-expanded={ouverte}
+                              onClick={(ev) => { ev.stopPropagation(); setLigneOuverte(ouverte ? null : e.date); }}
+                            >
+                              {fmtJour(e.date)}
+                            </button>
+                            {e.sans_chauffeur && (
+                              <span className="pastille ml-2 align-middle" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 14%, transparent)", color: COLORS.fleet }} title="Location sans chauffeur">
+                                <KeyRound size={10} /> <span className="hidden sm:inline">Location</span>
+                              </span>
                             )}
+                            {e.note && <MessageSquareText size={12} className="ml-1.5 inline-block align-middle" color={COLORS.fleet} aria-label="Avec remarque" />}
                           </td>
-                          <td className="px-5 py-2 font-sans">{e.receveur || "—"}</td>
-                          <td className="px-5 py-2">{fmt(e.recette)}</td>
-                          <td className="px-5 py-2">{fmt(e.gazoil)}</td>
-                          <td className="px-5 py-2">{fmt(e.autres)}</td>
-                          <td className="px-5 py-2 font-semibold">{fmt(e.net)}</td>
-                          <td className="px-5 py-2" onClick={(ev) => ev.stopPropagation()}>
-                            <div className="flex items-center gap-2 font-sans">
-                              <button onClick={() => startEdit(e)} title="Modifier" className="text-[var(--text-slate-light)] hover:text-[var(--fleet)]"><Pencil size={14} /></button>
-                              <button onClick={() => onDelete(e.date)} title="Supprimer" className="text-[var(--text-slate-light)] hover:text-[var(--red)]"><Trash2 size={14} /></button>
-                            </div>
-                          </td>
+                          <td className="num">{repos ? "—" : fmt(e.recette)}</td>
+                          <td className="num hidden sm:table-cell">{repos ? "—" : fmt((Number(e.gazoil) || 0) + (Number(e.autres) || 0))}</td>
+                          <td className="num font-semibold">{repos ? "Repos" : fmt(e.net)}</td>
                         </tr>
 
                         {ouverte && (
                           <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                            <td colSpan={8} className="px-5 pb-4 pt-1">
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-sans">
-                                <Detail label="Recette" valeur={`${fmt(e.recette)} F`} />
-                                <Detail label="Gazoil" valeur={`${fmt(e.gazoil)} F`} legende={e.gazoil_note} />
-                                <Detail label="Autres dépenses" valeur={`${fmt(e.autres)} F`} legende={e.autres_note} />
-                                <Detail label="Total caisse" valeur={`${fmt(e.total_caisse)} F`} />
-                                <Detail label="Net versé" valeur={`${fmt(e.net)} F`} accent={COLORS.green} />
-                                <Detail label="Receveur" valeur={e.receveur || "—"} />
-                                <Detail
-                                  label="Mode"
-                                  valeur={e.sans_chauffeur ? "Location sans chauffeur" : "Avec chauffeur"}
-                                  accent={e.sans_chauffeur ? COLORS.fleet : undefined}
-                                />
+                            <td colSpan={5} className="!pb-4 !pt-0">
+                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                <Detail label="Recette" valeur={fmtF(e.recette)} />
+                                <Detail label="Gazoil" valeur={fmtF(e.gazoil)} legende={e.gazoil_note} />
+                                <Detail label="Autres dépenses" valeur={fmtF(e.autres)} legende={e.autres_note} />
+                                <Detail label="Total caisse" valeur={fmtF(e.total_caisse)} />
+                                <Detail label="Net versé" valeur={fmtF(e.net)} accent={COLORS.green} />
+                                <Detail label="Receveur" valeur={e.receveur || "—"} legende={e.sans_chauffeur ? "Location sans chauffeur" : null} />
                               </div>
 
-                              {e.note ? (
-                                <div
-                                  className="flex items-start gap-2.5 rounded-xl px-4 py-3 mt-2.5 border font-sans text-xs leading-relaxed text-[var(--text-slate)] whitespace-pre-wrap"
-                                  style={{
-                                    borderColor: "color-mix(in srgb, var(--fleet) 30%, transparent)",
-                                    backgroundColor: "color-mix(in srgb, var(--fleet) 6%, transparent)",
-                                  }}
-                                >
-                                  <MessageSquareText size={15} color={COLORS.fleet} className="mt-0.5 shrink-0" />
-                                  <div>
-                                    <div className="font-semibold mb-0.5" style={{ color: COLORS.ink }}>
-                                      Remarque sur la journée
-                                    </div>
-                                    {e.note}
-                                  </div>
-                                </div>
-                              ) : (
-                                !aDesDetails && (
-                                  <div className="text-[11px] text-[var(--text-slate-light)] mt-2.5 font-sans">
-                                    Aucune remarque sur cette journée.
-                                  </div>
-                                )
+                              {e.note && (
+                                <Bandeau icone={MessageSquareText} className="mt-2 whitespace-pre-wrap bg-[var(--bg-surface)]">
+                                  <div className="mb-0.5 font-semibold text-[var(--text-ink)]">Remarque sur la journée</div>
+                                  {e.note}
+                                </Bandeau>
                               )}
+
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button onClick={() => startEdit(e)} className="btn btn-contour btn-petit">
+                                  <Pencil size={13} /> Modifier
+                                </button>
+                                <button onClick={() => onDelete(e)} disabled={saving} className="btn btn-contour btn-petit" style={{ color: COLORS.red }}>
+                                  <Trash2 size={13} /> Supprimer
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         )}
@@ -707,23 +617,18 @@ export default function SaisieClient({ vehicles }) {
                   })}
                 </tbody>
               </table>
-            </div>
 
-            {historique.length > nbAffichees && (
-              <div className="px-5 py-3 border-t text-center" style={{ borderColor: COLORS.line }}>
-                <button
-                  onClick={() => setNbAffichees((n) => n + 30)}
-                  className="text-xs font-medium"
-                  style={{ color: COLORS.fleet }}
-                >
-                  Afficher 30 saisies de plus ({historique.length - nbAffichees} restantes)
-                </button>
-              </div>
-            )}
-          </>
-        )}
+              {historique.length > nbAffichees && (
+                <div className="border-t border-[var(--border-line)] p-3 text-center">
+                  <button onClick={() => setNbAffichees((n) => n + 30)} className="btn btn-discret btn-petit" style={{ color: COLORS.fleet }}>
+                    Afficher 30 de plus <span className="font-normal text-[var(--text-slate-light)]">({historique.length - nbAffichees} restantes)</span>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </section>
       </div>
-
     </main>
   );
 }

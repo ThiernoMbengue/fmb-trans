@@ -17,6 +17,9 @@ export async function unlockInvestor(formData) {
   const descripteur = descripteurSecret(await lireHachage(admin));
 
   if (!verifierMotDePasse(descripteur, password)) {
+    // Petit délai sur un échec : il rend une recherche automatique du mot de
+    // passe beaucoup plus lente, sans gêner une personne qui s'est trompée.
+    await new Promise((ok) => setTimeout(ok, 800));
     redirect("/investisseur?error=1");
   }
 

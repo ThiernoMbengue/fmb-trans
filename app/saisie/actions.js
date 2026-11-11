@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { plageDeJours } from "@/lib/format";
 
 // Deux colonnes arrivent par migration : sans_chauffeur (migration_location)
 // et note (migration_note_saisie). Tant qu'une migration n'a pas été exécutée,
@@ -78,14 +79,8 @@ export async function saveLocationRange(payload) {
   if (dateDebut > dateFin) return { error: "La date de début doit précéder la date de fin" };
 
   const skipSet = new Set(skipDates || []);
-  const dates = [];
-  let d = new Date(dateDebut + "T00:00:00");
-  const end = new Date(dateFin + "T00:00:00");
-  while (d <= end) {
-    const isoDate = d.toISOString().slice(0, 10);
-    if (!skipSet.has(isoDate)) dates.push(isoDate);
-    d.setDate(d.getDate() + 1);
-  }
+  // Calcul en UTC d'un bout à l'autre : il ne dépend pas du fuseau du serveur.
+  const dates = plageDeJours(dateDebut, dateFin, 367).filter((jour) => !skipSet.has(jour));
   if (dates.length > 366) return { error: "Période trop longue (max 366 jours)" };
   if (dates.length === 0) return { success: true, count: 0 };
 

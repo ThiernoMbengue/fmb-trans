@@ -4,6 +4,7 @@ import { getRole } from "@/lib/supabase/role";
 import CarnetClient from "./carnet-client";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Carnet de bord" };
 
 export default async function CarnetPage() {
   const supabase = createClient();
