@@ -2,23 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-
+/* -------------------------------------------------------------------------
+   Jetons de couleur — clair et sombre
+   ------------------------------------------------------------------------- */
 :root {
-  --bg-page: #F3F5F9;
-  --bg-surface: #ffffff;
+  --bg-page: #F4F6FA;
+  --bg-surface: #FFFFFF;
   --bg-surface-alt: #FFFFFF;
   --bg-sidebar: #14324D;
   --border-line: #E3E8F0;
   --text-ink: #101828;
-  --text-slate: #5B6B7A;
-  --text-slate-light: #94A3B8;
+  --text-slate: #55647A;
+  --text-slate-light: #8A99AE;
   --fleet: #1F4E78;
   --fleet-bright: #2E6FB0;
   --amber: #C9862B;
   --green: #1E9E74;
   --red: #D64545;
   --purple: #7C5CBF;
+
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(31, 78, 120, 0.06);
+  --shadow-pop: 0 12px 40px rgba(16, 24, 40, 0.18);
+  --barre-basse: 0px;
 }
 
 html.dark {
@@ -28,14 +33,30 @@ html.dark {
   --bg-sidebar: #0A1122;
   --border-line: #1E293F;
   --text-ink: #EEF2F9;
-  --text-slate: #94A3B8;
-  --text-slate-light: #5D6C85;
+  --text-slate: #9AA8BC;
+  --text-slate-light: #6B7A93;
   --fleet: #4C8FCF;
   --fleet-bright: #5B9BE0;
   --amber: #E3A947;
   --green: #34C795;
   --red: #F0685A;
   --purple: #9B84DD;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+  --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+/* -------------------------------------------------------------------------
+   Base
+   ------------------------------------------------------------------------- */
+* { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  /* Pas de flash gris au toucher sur mobile : les états actifs s'en chargent. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 html, body {
@@ -43,92 +64,198 @@ html, body {
   color: var(--text-ink);
 }
 
-.font-display {
-  font-family: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui;
-}
-.font-figures {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-feature-settings: "tnum" 1, "zero" 1;
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-feature-settings: "cv11" 1, "ss03" 1;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--fleet-bright) 10%, transparent), transparent 34rem),
+    var(--bg-page);
+  background-attachment: fixed;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Motif signature : ligne pointillée façon marquage routier, en mouvement lent */
-@keyframes road-dash {
-  to { background-position: 40px 0; }
+::selection { background: color-mix(in srgb, var(--amber) 28%, transparent); }
+
+.font-display {
+  font-family: 'Space Grotesk Variable', 'Space Grotesk', 'Inter Variable', ui-sans-serif, system-ui;
+  letter-spacing: -0.01em;
 }
+
+/* Chiffres : même police que le texte, mais à chasse fixe pour que les
+   colonnes s'alignent. Une police « machine à écrire » alourdissait les
+   tableaux sans rien apporter. */
+.font-figures {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+/* Barres de défilement discrètes dans les zones défilantes. */
+.defilement-fin { scrollbar-width: thin; scrollbar-color: var(--border-line) transparent; }
+
+/* -------------------------------------------------------------------------
+   Composants
+   ------------------------------------------------------------------------- */
+@layer components {
+  /* Conteneur de page : mêmes marges et même largeur partout. */
+  .page {
+    @apply mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-7 lg:px-8;
+  }
+  .page-etroite { @apply max-w-3xl; }
+
+  .surface-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-line);
+    box-shadow: var(--shadow-card);
+  }
+  .carte { @apply surface-card rounded-2xl; }
+
+  /* Champs de formulaire. 16 px sur mobile : en dessous, iOS zoome sur la
+     page à chaque prise de focus. */
+  .champ {
+    @apply w-full min-w-0 rounded-xl border px-3 py-2.5 text-base sm:py-2 sm:text-sm;
+    background: var(--bg-surface);
+    border-color: var(--border-line);
+    color: var(--text-ink);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .champ::placeholder { color: var(--text-slate-light); }
+  .champ:hover { border-color: color-mix(in srgb, var(--fleet-bright) 35%, var(--border-line)); }
+  .champ:focus {
+    outline: none;
+    border-color: var(--fleet-bright);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--fleet-bright) 18%, transparent);
+  }
+  .champ:disabled { opacity: 0.6; cursor: not-allowed; }
+  select.champ { @apply pr-8; }
+  textarea.champ { @apply resize-y leading-relaxed; }
+
+  .etiquette { @apply text-xs font-medium; color: var(--text-slate); }
+
+  /* Boutons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold whitespace-nowrap select-none;
+    min-height: 2.5rem;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 100ms ease, box-shadow 150ms ease, opacity 150ms ease;
+  }
+  .btn:active:not(:disabled) { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  .btn-primaire { color: #fff; background: var(--fleet); }
+  .btn-primaire:hover:not(:disabled) { background: color-mix(in srgb, var(--fleet) 88%, black); }
+  html.dark .btn-primaire { color: #06101f; }
+  html.dark .btn-primaire:hover:not(:disabled) { background: color-mix(in srgb, var(--fleet) 88%, white); }
+
+  .btn-succes { color: #fff; background: var(--green); }
+  .btn-succes:hover:not(:disabled) { background: color-mix(in srgb, var(--green) 88%, black); }
+  html.dark .btn-succes { color: #04140e; }
+
+  .btn-danger { color: #fff; background: var(--red); }
+  .btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 88%, black); }
+
+  .btn-contour {
+    color: var(--text-ink);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-line);
+  }
+  .btn-contour:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--fleet-bright) 45%, var(--border-line));
+    background: color-mix(in srgb, var(--fleet-bright) 5%, var(--bg-surface));
+  }
+
+  .btn-discret { color: var(--text-slate); background: transparent; }
+  .btn-discret:hover:not(:disabled) { background: color-mix(in srgb, var(--text-slate) 10%, transparent); color: var(--text-ink); }
+
+  .btn-petit { @apply rounded-lg px-2.5 py-1.5 text-xs; min-height: 2rem; }
+
+  /* Bouton carré pour une icône seule. 36 px : assez grand pour un doigt. */
+  .btn-icone {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border;
+    border-color: var(--border-line);
+    color: var(--text-slate);
+    background: var(--bg-surface);
+    transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease, transform 100ms ease;
+  }
+  .btn-icone:hover:not(:disabled) { color: var(--text-ink); border-color: color-mix(in srgb, var(--fleet-bright) 45%, var(--border-line)); }
+  .btn-icone:active:not(:disabled) { transform: scale(0.94); }
+  .btn-icone:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-icone.danger:hover:not(:disabled) { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--border-line)); }
+  .btn-icone.succes { color: var(--green); }
+
+  /* Tableaux */
+  .tableau { @apply w-full text-sm; border-collapse: collapse; }
+  .tableau thead th {
+    @apply px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap sm:px-5;
+    color: var(--text-slate);
+    background: var(--bg-page);
+  }
+  .tableau tbody td { @apply px-4 py-2.5 align-middle sm:px-5; }
+  .tableau tbody tr { border-top: 1px solid var(--border-line); }
+  .tableau .num { @apply text-right whitespace-nowrap; font-variant-numeric: tabular-nums; }
+  .tableau thead th.num { @apply text-right; }
+
+  .pastille {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Motifs et animations
+   ------------------------------------------------------------------------- */
+/* Motif signature : ligne pointillée façon marquage routier. */
+@keyframes road-dash { to { background-position: 40px 0; } }
 .road-divider {
   height: 2px;
   background-image: repeating-linear-gradient(90deg, currentColor 0 14px, transparent 14px 26px);
   animation: road-dash 3.2s linear infinite;
   opacity: 0.4;
 }
-@media (prefers-reduced-motion: reduce) {
-  .road-divider { animation: none; }
-}
-
-
-
-
-* {
-  box-sizing: border-box;
-}
-
-html {
-  scroll-behavior: smooth;
-}
-
-body {
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--fleet-bright) 14%, transparent), transparent 34rem),
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-page) 96%, white), var(--bg-page));
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-}
-
-::selection {
-  background: color-mix(in srgb, var(--amber) 28%, transparent);
-}
 
 @keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-
+@keyframes fondu { from { opacity: 0; } to { opacity: 1; } }
+@keyframes glisse-gauche { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes pop {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 @keyframes soft-pulse {
   0%, 100% { opacity: 0.55; transform: scale(1); }
   50% { opacity: 0.8; transform: scale(1.04); }
 }
+@keyframes miroitement { to { background-position: -200% 0; } }
 
-.surface-card {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 96%, white), var(--bg-surface));
-  border: 1px solid var(--border-line);
-  box-shadow: 0 18px 45px color-mix(in srgb, var(--fleet) 9%, transparent);
+.animate-fade-up { animation: fade-up 320ms ease both; }
+.animate-fondu { animation: fondu 180ms ease both; }
+.animate-glisse-gauche { animation: glisse-gauche 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.animate-pop { animation: pop 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* Squelette de chargement */
+.squelette {
+  border-radius: 0.75rem;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--text-slate) 9%, transparent) 25%,
+    color-mix(in srgb, var(--text-slate) 17%, transparent) 37%,
+    color-mix(in srgb, var(--text-slate) 9%, transparent) 63%);
+  background-size: 200% 100%;
+  animation: miroitement 1.4s ease-in-out infinite;
 }
 
-.pro-card {
-  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+.pro-card { transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease; }
+@media (hover: hover) {
+  .pro-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--fleet-bright) 28%, var(--border-line));
+    box-shadow: 0 14px 34px color-mix(in srgb, var(--fleet) 12%, transparent);
+  }
 }
 
-.pro-card:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--fleet-bright) 28%, var(--border-line));
-  box-shadow: 0 18px 38px color-mix(in srgb, var(--fleet) 12%, transparent);
-}
-
-.animate-fade-up {
-  animation: fade-up 420ms ease both;
-}
-
-.status-dot {
-  position: relative;
-}
-
+.status-dot { position: relative; }
 .status-dot::after {
   content: "";
   position: absolute;
@@ -139,14 +266,15 @@ body {
   animation: soft-pulse 2.4s ease-in-out infinite;
 }
 
-button, a, input, select {
-  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-}
+a, button { transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease; }
 
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--fleet-bright) 65%, white);
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--fleet-bright) 70%, white);
   outline-offset: 2px;
 }
+
+/* Marges de sécurité : encoche, barre de gestes, barre d'onglets mobile. */
+.marge-basse { padding-bottom: calc(var(--barre-basse) + env(safe-area-inset-bottom, 0px)); }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -156,3 +284,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  .hors-impression { display: none !important; }
+  body { background: #fff; }
+}
+
+/* Barre d'onglets mobile : le contenu et les messages s'arrêtent au-dessus. */
+@media (max-width: 1023.98px) {
+  :root { --barre-basse: 3.75rem; }
+}
+.marge-contenu { padding-bottom: calc(var(--barre-basse) + env(safe-area-inset-bottom, 0px)); }

@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/supabase/role";
 import DashboardClient from "./dashboard-client";
 
+export const metadata = { title: "Tableau de bord" };
+
 export default async function HomePage() {
   const supabase = createClient();
   const { role } = await getRole(supabase);

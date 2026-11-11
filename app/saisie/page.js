@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/supabase/role";
 import SaisieClient from "./saisie-client";
 
+export const metadata = { title: "Saisie" };
+
 export default async function SaisiePage() {
   const supabase = createClient();
   const { role } = await getRole(supabase);

@@ -1,55 +1,54 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Loader2, Check, AlertCircle } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { Loader2, Check } from "lucide-react";
 import { updateVehicleOwner } from "./actions";
+import { useToast } from "@/components/ui";
 
 export default function OwnerSelect({ vehicleId, ownerId, owners }) {
+  const toast = useToast();
   const [value, setValue] = useState(ownerId || "");
   const [pending, startTransition] = useTransition();
-  const [etat, setEtat] = useState(null); // "ok" | "erreur"
-  const [message, setMessage] = useState(null);
+  const [ok, setOk] = useState(false);
+
+  // La fiche est rafraîchie par le serveur après chaque enregistrement.
+  useEffect(() => { setValue(ownerId || ""); }, [ownerId]);
 
   const onChange = (e) => {
     const nouveau = e.target.value;
     const precedent = value;
     setValue(nouveau);
-    setEtat(null);
-    setMessage(null);
+    setOk(false);
 
     startTransition(async () => {
       const res = await updateVehicleOwner(vehicleId, nouveau);
       if (res?.error) {
         setValue(precedent);
-        setEtat("erreur");
-        setMessage(res.error);
+        toast(res.error, "error");
       } else {
-        setEtat("ok");
-        setTimeout(() => setEtat(null), 2500);
+        setOk(true);
+        setTimeout(() => setOk(false), 2500);
       }
     });
   };
 
   return (
-    <div className="flex flex-col gap-1 min-w-0">
-      <div className="flex items-center gap-1.5">
-        <select
-          value={value}
-          onChange={onChange}
-          disabled={pending}
-          className="text-xs bg-[var(--bg-surface)] border rounded-lg px-2 py-1.5 max-w-[190px] disabled:opacity-60"
-          style={{ borderColor: value ? "var(--green)" : "var(--border-line)" }}
-        >
-          <option value="">— aucun compte lié —</option>
-          {(owners || []).map((o) => (
-            <option key={o.id} value={o.id}>{o.nom || o.email || o.id}</option>
-          ))}
-        </select>
-        {pending && <Loader2 size={13} className="animate-spin text-[var(--text-slate-light)] shrink-0" />}
-        {etat === "ok" && <Check size={13} className="shrink-0" style={{ color: "var(--green)" }} />}
-        {etat === "erreur" && <AlertCircle size={13} className="shrink-0" style={{ color: "var(--red)" }} />}
-      </div>
-      {message && <div className="text-[10px]" style={{ color: "var(--red)" }}>{message}</div>}
+    <div className="flex min-w-0 items-center gap-2">
+      <select
+        aria-label="Compte propriétaire lié"
+        value={value}
+        onChange={onChange}
+        disabled={pending}
+        className="champ min-w-0 flex-1 py-1.5"
+        style={value ? { borderColor: "color-mix(in srgb, var(--green) 55%, var(--border-line))" } : undefined}
+      >
+        <option value="">Aucun compte lié</option>
+        {(owners || []).map((o) => (
+          <option key={o.id} value={o.id}>{o.nom || o.email || o.id}</option>
+        ))}
+      </select>
+      {pending && <Loader2 size={15} className="shrink-0 animate-spin text-[var(--text-slate-light)]" />}
+      {ok && !pending && <Check size={15} className="shrink-0" style={{ color: "var(--green)" }} />}
     </div>
   );
 }

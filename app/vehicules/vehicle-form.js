@@ -1,54 +1,81 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Plus, Save, Loader2, ChevronDown } from "lucide-react";
 import { addVehicle } from "./actions";
-import { Save, Loader2 } from "lucide-react";
+import { Champ, useToast } from "@/components/ui";
 
-const inputClass =
-  "w-full text-sm bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30";
-
-export default function VehicleForm({ owners }) {
+export default function VehicleForm({ owners, ouvert: ouvertAuDepart = false }) {
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [ouvert, setOuvert] = useState(ouvertAuDepart);
   const formRef = useRef(null);
 
-  const onSubmit = async (formData) => {
+  // Sur grand écran le formulaire reste visible à côté de la liste ; sur
+  // téléphone il se replie pour laisser la place aux véhicules.
+  useEffect(() => {
+    if (window.matchMedia("(min-width: 1280px)").matches) setOuvert(true);
+  }, []);
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
     setSaving(true);
-    setError(null);
-    const res = await addVehicle(formData);
+    const res = await addVehicle(new FormData(e.currentTarget));
     setSaving(false);
-    if (res?.error) setError(res.error);
-    else formRef.current?.reset();
+    if (res?.error) return toast(res.error, "error");
+    toast("Véhicule ajouté");
+    formRef.current?.reset();
   };
 
   return (
-    <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-line)] p-5">
-      <div className="text-sm font-semibold mb-4" style={{ color: "var(--text-ink)" }}>
-        Ajouter un véhicule
-      </div>
-      {error && <div className="text-xs text-white bg-[var(--red)] rounded-lg px-3 py-2 mb-3">{error}</div>}
-      <form ref={formRef} action={onSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <input name="marque" placeholder="Marque / modèle" required className={inputClass} />
-        <input name="immatriculation" placeholder="Immatriculation" required className={inputClass} />
-        <input name="proprietaire" placeholder="Propriétaire" className={inputClass} />
-        <select name="owner_id" defaultValue="" className={inputClass}>
-          <option value="">— Compte propriétaire lié (optionnel) —</option>
-          {(owners || []).map((o) => (
-            <option key={o.id} value={o.id}>{o.nom || o.email || o.id}</option>
-          ))}
-        </select>
-        <input name="chauffeur" placeholder="Chauffeur" className={inputClass} />
-        <input name="taux_chauffeur" type="number" placeholder="Taux chauffeur / jour travaillé (FCFA)" defaultValue={5000} className={inputClass} />
-        <button
-          type="submit"
-          disabled={saving}
-          className="md:col-span-3 mt-1 flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg text-white disabled:opacity-60"
-          style={{ backgroundColor: "var(--fleet)" }}
+    <section className="carte overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOuvert((o) => !o)}
+        aria-expanded={ouvert}
+        className="flex w-full items-center gap-2.5 px-4 py-3.5 text-left text-sm font-semibold text-[var(--text-ink)] sm:px-5"
+      >
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+          style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 14%, transparent)" }}
         >
-          {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-          Enregistrer
-        </button>
-      </form>
-    </div>
+          <Plus size={15} color="var(--fleet-bright)" />
+        </span>
+        Ajouter un véhicule
+        <ChevronDown size={16} className={`ml-auto shrink-0 text-[var(--text-slate-light)] transition-transform ${ouvert ? "rotate-180" : ""}`} />
+      </button>
+
+      {ouvert && (
+        <form ref={formRef} onSubmit={onSubmit} className="animate-fondu grid grid-cols-1 gap-4 border-t border-[var(--border-line)] px-4 py-4 sm:grid-cols-2 sm:px-5 xl:grid-cols-1">
+          <Champ label="Marque / modèle">
+            <input name="marque" required className="champ" placeholder="Renault QM3" autoComplete="off" />
+          </Champ>
+          <Champ label="Immatriculation">
+            <input name="immatriculation" required className="champ uppercase placeholder:normal-case" placeholder="AB-123-CD" autoComplete="off" />
+          </Champ>
+          <Champ label="Propriétaire">
+            <input name="proprietaire" className="champ" placeholder="Nom affiché" autoComplete="off" />
+          </Champ>
+          <Champ label="Compte propriétaire lié" aide="Donne au propriétaire l'accès à ce véhicule.">
+            <select name="owner_id" defaultValue="" className="champ">
+              <option value="">Aucun pour l&apos;instant</option>
+              {(owners || []).map((o) => (
+                <option key={o.id} value={o.id}>{o.nom || o.email || o.id}</option>
+              ))}
+            </select>
+          </Champ>
+          <Champ label="Chauffeur">
+            <input name="chauffeur" className="champ" placeholder="Nom du chauffeur" autoComplete="off" />
+          </Champ>
+          <Champ label="Taux chauffeur / jour (FCFA)">
+            <input name="taux_chauffeur" type="number" inputMode="numeric" min={0} step={500} defaultValue={5000} className="champ font-figures" />
+          </Champ>
+          <button type="submit" disabled={saving} className="btn btn-primaire sm:col-span-2 xl:col-span-1">
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+            Ajouter le véhicule
+          </button>
+        </form>
+      )}
+    </section>
   );
 }

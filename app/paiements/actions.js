@@ -33,7 +33,7 @@ function rafraichir() {
 export async function savePaiement(payload) {
   try {
     const supabase = createClient();
-    if (!(await assertAdmin(supabase))) return { error: "Accès refusé" };
+    if (!(await assertAdmin(supabase))) return { error: "Action réservée au gestionnaire." };
 
     const montant = Number(payload.montant) || 0;
     if (!payload.vehicleId || !payload.periode) return { error: "Véhicule et période requis" };
@@ -69,7 +69,7 @@ export async function savePaiement(payload) {
 export async function deletePaiement(id) {
   try {
     const supabase = createClient();
-    if (!(await assertAdmin(supabase))) return { error: "Accès refusé" };
+    if (!(await assertAdmin(supabase))) return { error: "Action réservée au gestionnaire." };
 
     // Le véhicule est relu avant la suppression : après, la ligne n'existe plus.
     const { data: paiement } = await supabase

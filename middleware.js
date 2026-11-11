@@ -53,5 +53,6 @@ export const config = {
     "/rapports/:path*",
     "/comptes/:path*",
     "/paiements/:path*",
+    "/carnet/:path*",
   ],
 };

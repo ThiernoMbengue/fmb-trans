@@ -22,7 +22,7 @@ function messageErreur(error) {
 export async function saveNote(payload) {
   try {
     const supabase = createClient();
-    if (!(await assertAdmin(supabase))) return { error: "Accès refusé" };
+    if (!(await assertAdmin(supabase))) return { error: "Action réservée au gestionnaire." };
 
     const titre = (payload.titre || "").trim();
     if (!titre) return { error: "Le titre est requis" };
@@ -65,7 +65,7 @@ export async function saveNote(payload) {
 export async function setNoteStatut(id, statut) {
   try {
     const supabase = createClient();
-    if (!(await assertAdmin(supabase))) return { error: "Accès refusé" };
+    if (!(await assertAdmin(supabase))) return { error: "Action réservée au gestionnaire." };
     if (!["ouvert", "regle"].includes(statut)) return { error: "Statut inconnu" };
 
     const { error } = await supabase
@@ -88,7 +88,7 @@ export async function setNoteStatut(id, statut) {
 export async function deleteNote(id) {
   try {
     const supabase = createClient();
-    if (!(await assertAdmin(supabase))) return { error: "Accès refusé" };
+    if (!(await assertAdmin(supabase))) return { error: "Action réservée au gestionnaire." };
 
     // Les fichiers partent avec la ligne (cascade en base), mais le contenu
     // stocké doit être retiré explicitement : rien ne le supprime pour nous.
@@ -115,7 +115,7 @@ export async function deleteNote(id) {
 export async function deleteFichier(fichierId) {
   try {
     const supabase = createClient();
-    if (!(await assertAdmin(supabase))) return { error: "Accès refusé" };
+    if (!(await assertAdmin(supabase))) return { error: "Action réservée au gestionnaire." };
 
     const { data: fichier } = await supabase
       .from("carnet_fichiers")

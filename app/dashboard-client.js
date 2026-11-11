@@ -7,12 +7,15 @@ import {
 } from "recharts";
 import {
   Coins, Wallet, TrendingUp, HandCoins, CalendarCheck, Gauge,
-  ArrowUpRight, ArrowDownRight, Minus, ChevronDown, Bus, Search, MessageSquareText,
-  NotebookPen, CalendarClock, ArrowRight,
+  ArrowUpRight, ArrowDownRight, Minus, Bus, Search, MessageSquareText,
+  NotebookPen, CalendarClock, ArrowRight, BarChart3,
 } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TYPE_PAR_ID, aSurveiller } from "@/lib/carnet";
+import { lireTout } from "@/lib/supabase/lire-tout";
+import { isoLocal, fmt, fmtF, fmtJour, fmtDateLongue } from "@/lib/format";
+import { EnTete, SelecteurVehicule, Vide, Bandeau } from "@/components/ui";
 
 const COLORS = {
   ink: "var(--text-ink)", fleet: "var(--fleet-bright)", amber: "var(--amber)",
@@ -20,19 +23,17 @@ const COLORS = {
   slate: "var(--text-slate)", line: "var(--border-line)",
 };
 
-const fmt = (n) => {
-  const num = Math.round(Number(n) || 0);
-  const neg = num < 0;
-  const digits = Math.abs(num).toString();
-  let out = "";
-  for (let i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 === 0) out += " ";
-    out += digits[i];
-  }
-  return (neg ? "-" : "") + out;
+// Graduations de l'axe : 15000 -> « 15k », 1500000 -> « 1,5M ».
+const fmtAxe = (v) => {
+  const abs = Math.abs(v);
+  if (abs >= 1000000) return `${(v / 1000000).toFixed(abs % 1000000 ? 1 : 0).replace(".", ",")}M`;
+  if (abs >= 1000) return `${Math.round(v / 1000)}k`;
+  return String(v);
 };
 const fmtShortDate = (isoStr) => { const [, m, d] = isoStr.split("-"); return `${d}/${m}`; };
-const isoOf = (d) => d.toISOString().slice(0, 10);
+// Date locale, pas UTC : hors du fuseau GMT (un propriétaire en Europe, par
+// exemple), toISOString() ferait reculer « aujourd'hui » d'un jour.
+const isoOf = (d) => isoLocal(d);
 const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
 const todayDate = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
@@ -129,7 +130,7 @@ function TrendChip({ t, invert = false }) {
       style={{ color, backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)` }}
     >
       <Icon size={11} />
-      {t.pct > 0 && t.dir !== "flat" ? "+" : ""}{t.pct.toFixed(1)}%
+      {t.pct > 0 && t.dir !== "flat" ? "+" : ""}{t.pct.toFixed(1).replace(".", ",")} %
     </div>
   );
 }
@@ -149,7 +150,7 @@ function Sparkline({ data, color }) {
 
 function KpiCard({ icon: Icon, label, value, accent, t, invert, caption, spark }) {
   return (
-    <div className="surface-card pro-card rounded-2xl p-3.5 sm:p-4 flex flex-col gap-2.5 sm:gap-3 min-w-0">
+    <div className="carte pro-card flex min-w-0 flex-col gap-2.5 p-3.5 sm:gap-3 sm:p-4">
       <div className="flex items-center justify-between gap-2 min-w-0">
         <div
           className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -164,7 +165,7 @@ function KpiCard({ icon: Icon, label, value, accent, t, invert, caption, spark }
         )}
       </div>
       <div className="min-w-0">
-        <div className="font-figures text-base sm:text-xl font-semibold leading-tight break-words" style={{ color: COLORS.ink }}>{value}</div>
+        <div className="font-figures text-[17px] font-bold leading-tight tracking-tight sm:text-xl" style={{ color: COLORS.ink }}>{value}</div>
         <div className="text-[11px] sm:text-xs text-[var(--text-slate)] mt-0.5 leading-snug">{label}</div>
         {caption && <div className="text-[10px] text-[var(--text-slate-light)] mt-1">{caption}</div>}
       </div>
@@ -173,15 +174,11 @@ function KpiCard({ icon: Icon, label, value, accent, t, invert, caption, spark }
   );
 }
 
-function Skeleton({ className }) {
-  return <div className={`animate-pulse rounded-xl bg-[var(--border-line)] ${className || ""}`} />;
-}
-
 function DetailItem({ label, value, caption, accent }) {
   return (
     <div className="rounded-xl bg-[var(--bg-page)] p-3 min-w-0">
       <div className="text-[11px] text-[var(--text-slate)] mb-1">{label}</div>
-      <div className="font-figures text-base font-semibold break-words" style={{ color: accent || COLORS.ink }}>{value}</div>
+      <div className="font-figures text-base font-semibold" style={{ color: accent || COLORS.ink }}>{value}</div>
       {caption && <div className="text-[11px] text-[var(--text-slate-light)] mt-1 break-words">{caption}</div>}
     </div>
   );
@@ -190,13 +187,13 @@ function DetailItem({ label, value, caption, accent }) {
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
   return (
-    <div className="bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg shadow-md px-3 py-2 text-xs font-figures">
+    <div className="rounded-xl border border-[var(--border-line)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-figures" style={{ boxShadow: "var(--shadow-pop)" }}>
       <div className="text-[var(--text-slate)] mb-1 font-sans">{label}</div>
       {payload.map((p) => (
         <div key={p.dataKey} className="flex items-center gap-2">
           <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
           <span className="text-[var(--text-slate)] font-sans">{p.name}</span>
-          <span className="ml-auto font-semibold" style={{ color: COLORS.ink }}>{fmt(p.value)} F</span>
+          <span className="ml-auto font-semibold" style={{ color: COLORS.ink }}>{fmtF(p.value)}</span>
         </div>
       ))}
     </div>
@@ -231,14 +228,20 @@ export default function DashboardClient({ vehicles, role }) {
   useEffect(() => {
     if (!vehicleId) return;
     setLoading(true);
-    const query =
+    // Lecture paginée : au-delà de 1 000 lignes, l'API tronque sans prévenir —
+    // et « toute la flotte » dépasse vite ce seuil.
+    const requete = () =>
       vehicleId === ALL_ID
         ? supabase.from("entries").select("*").in("vehicle_id", vehicles.map((v) => v.id)).order("date", { ascending: true })
         : supabase.from("entries").select("*").eq("vehicle_id", vehicleId).order("date", { ascending: true });
-    query.then(({ data }) => {
+    let annule = false;
+    lireTout(requete).then(({ data }) => {
+      if (annule) return;
       setEntries(data || []);
       setLoading(false);
     });
+    // Si l'on change de véhicule avant la fin, la réponse en retard est ignorée.
+    return () => { annule = true; };
   }, [vehicleId]); // eslint-disable-line
 
   const surveille = useMemo(() => aSurveiller(carnet), [carnet]);
@@ -325,360 +328,323 @@ export default function DashboardClient({ vehicles, role }) {
 
   if (!vehicles.length) {
     return (
-      <main className="px-6 md:px-10 py-8 max-w-6xl mx-auto text-sm text-[var(--text-slate-light)]">
-        {role === "admin"
-          ? "Aucun véhicule enregistré pour le moment."
-          : "Aucun véhicule ne vous a été attribué pour le moment. Contactez le gestionnaire."}
+      <main className="page">
+        <div className="carte">
+          <Vide icone={Bus} titre="Aucun véhicule pour le moment">
+            {role === "admin"
+              ? "Ajoutez un premier véhicule depuis l'onglet « Véhicules » pour commencer le suivi."
+              : "Aucun véhicule ne vous a encore été attribué. Contactez votre gestionnaire."}
+          </Vide>
+        </div>
       </main>
     );
   }
 
+  const cleLigne = (e) => `${e.vehicle_id}-${e.date}`;
+
   return (
-    <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto animate-fade-up">
-      <section className="surface-card rounded-3xl p-5 sm:p-6 mb-5 overflow-hidden relative">
-        <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-[var(--fleet-bright)]/10 blur-2xl" />
-        <div className="absolute right-16 bottom-0 h-20 w-20 rounded-full bg-[var(--amber)]/10 blur-xl" />
-        <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border-line)] bg-[var(--bg-page)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-slate)]">
-              <span className="status-dot h-2 w-2 rounded-full bg-[var(--green)] text-[var(--green)]" />
-              Pilotage en temps réel
-            </div>
-            <h1 className="font-display mt-4 text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text-ink)]">
-              {role === "admin" ? "Tableau de bord de flotte" : "Mon tableau de bord"}
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-slate)]">
-              {role === "admin"
-                ? "Suivez les recettes, dépenses, marges et versements avec une lecture claire par véhicule et par période."
-                : "Suivez les recettes, dépenses et versements de vos véhicules avec une lecture claire par période."}
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs text-[var(--text-slate)] sm:min-w-64">
-            <div className="rounded-2xl bg-[var(--bg-page)] p-3">
-              <div className="font-figures text-lg font-semibold text-[var(--text-ink)]">{vehicles.length}</div>
-              <div>{role === "admin" ? "Véhicules suivis" : "Vos véhicules"}</div>
-            </div>
-            <div className="rounded-2xl bg-[var(--bg-page)] p-3">
-              <div className="font-figures text-lg font-semibold text-[var(--text-ink)]">{range.start}</div>
-              <div>Début période</div>
-            </div>
-          </div>
-        </div>
-      </section>
+    <main className="page animate-fade-up">
+      <EnTete
+        titre={role === "admin" ? "Tableau de bord" : "Mon tableau de bord"}
+        description={
+          range.start === range.end
+            ? `Journée du ${fmtDateLongue(range.start)}`
+            : `Du ${fmtDateLongue(range.start)} au ${fmtDateLongue(range.end)}`
+        }
+      />
 
       {/* Ce que le carnet de bord réclame : échéances proches et dettes
           ouvertes. Le reste y dort, pour ne pas en faire un cimetière. */}
       {role === "admin" && (surveille.echeances.length > 0 || surveille.aPayer > 0 || surveille.aRecevoir > 0) && (
-        <section className="surface-card rounded-2xl p-5 mt-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+        <section className="carte mb-5 p-4 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
                 style={{ backgroundColor: "color-mix(in srgb, var(--amber) 16%, transparent)" }}>
                 <NotebookPen size={15} color={COLORS.amber} />
               </div>
-              <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>À surveiller</div>
+              <h2 className="text-sm font-semibold text-[var(--text-ink)]">À surveiller</h2>
             </div>
-            <Link href="/carnet" className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: COLORS.fleet }}>
+            <Link href="/carnet" className="inline-flex items-center gap-1 text-xs font-semibold hover:underline" style={{ color: COLORS.fleet }}>
               Carnet de bord <ArrowRight size={13} />
             </Link>
           </div>
 
-          <div className="flex flex-wrap gap-2 mb-3">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {surveille.aRecevoir > 0 && (
-              <span className="text-xs rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "var(--bg-page)", color: COLORS.green }}>
-                On nous doit <strong className="font-figures">{fmt(surveille.aRecevoir)} F</strong>
-              </span>
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-[var(--bg-page)] px-3 py-2 text-sm">
+                <span className="text-[var(--text-slate)]">On nous doit</span>
+                <strong className="font-figures whitespace-nowrap" style={{ color: COLORS.green }}>{fmtF(surveille.aRecevoir)}</strong>
+              </div>
             )}
             {surveille.aPayer > 0 && (
-              <span className="text-xs rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "var(--bg-page)", color: COLORS.red }}>
-                Nous devons <strong className="font-figures">{fmt(surveille.aPayer)} F</strong>
-              </span>
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-[var(--bg-page)] px-3 py-2 text-sm">
+                <span className="text-[var(--text-slate)]">Nous devons</span>
+                <strong className="font-figures whitespace-nowrap" style={{ color: COLORS.red }}>{fmtF(surveille.aPayer)}</strong>
+              </div>
             )}
-          </div>
-
-          {surveille.echeances.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              {surveille.echeances.slice(0, 5).map((l) => {
-                const enRetard = l.jours < 0;
-                const proche = l.jours >= 0 && l.jours <= 7;
-                const couleur = enRetard ? COLORS.red : proche ? COLORS.amber : COLORS.slate;
-                return (
-                  <div key={l.id} className="flex items-center justify-between gap-3 text-sm rounded-lg px-3 py-2"
-                    style={{ backgroundColor: "var(--bg-page)" }}>
-                    <span className="min-w-0 truncate" style={{ color: COLORS.ink }}>
-                      {(TYPE_PAR_ID[l.type] || {}).emoji} {l.titre}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[11px] shrink-0" style={{ color: couleur }}>
-                      <CalendarClock size={12} />
-                      {enRetard ? `en retard de ${-l.jours} j` : l.jours === 0 ? "aujourd'hui" : l.jours === 1 ? "demain" : `dans ${l.jours} j`}
-                    </span>
-                  </div>
-                );
-              })}
-              {surveille.echeances.length > 5 && (
-                <div className="text-[11px] text-[var(--text-slate-light)] mt-0.5">
-                  et {surveille.echeances.length - 5} autre(s) échéance(s).
+            {surveille.echeances.slice(0, 5).map((l) => {
+              const enRetard = l.jours < 0;
+              const couleur = enRetard ? COLORS.red : l.jours <= 7 ? COLORS.amber : COLORS.slate;
+              return (
+                <div key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--bg-page)] px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate text-[var(--text-ink)]">
+                    {(TYPE_PAR_ID[l.type] || {}).emoji} {l.titre}
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium" style={{ color: couleur }}>
+                    <CalendarClock size={12} />
+                    {enRetard ? `retard ${-l.jours} j` : l.jours === 0 ? "aujourd'hui" : l.jours === 1 ? "demain" : `dans ${l.jours} j`}
+                  </span>
                 </div>
-              )}
+              );
+            })}
+          </div>
+          {surveille.echeances.length > 5 && (
+            <div className="mt-2 text-[11px] text-[var(--text-slate-light)]">
+              et {surveille.echeances.length - 5} autre(s) échéance(s) dans le carnet.
             </div>
           )}
         </section>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
-        <div className="flex items-center gap-2.5 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl px-3 py-2 min-w-0">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 16%, transparent)" }}>
-            <Bus size={15} color={COLORS.fleet} />
-          </div>
-          <div className="relative min-w-0">
-            <select
-              value={vehicleId || ""}
-              onChange={(e) => setVehicleId(e.target.value)}
-              className="appearance-none bg-transparent text-sm font-semibold pr-6 focus:outline-none max-w-[180px] sm:max-w-none truncate"
-              style={{ color: COLORS.ink }}
-            >
-              {vehicles.length > 1 && <option value={ALL_ID}>{allLabel}</option>}
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>{v.marque} — {v.immatriculation}</option>
-              ))}
-            </select>
-            <ChevronDown size={13} className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-slate-light)]" />
-          </div>
-          {vehicle && <div className="text-xs text-[var(--text-slate-light)] hidden md:block border-l border-[var(--border-line)] pl-2.5 ml-0.5 shrink-0">{vehicle.chauffeur}</div>}
-          {isAllMode && <div className="text-xs text-[var(--text-slate-light)] hidden md:block border-l border-[var(--border-line)] pl-2.5 ml-0.5 shrink-0">{vehicles.length} véhicules combinés</div>}
-        </div>
+      {/* Véhicule et période */}
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <SelecteurVehicule
+          vehicles={vehicles}
+          value={vehicleId}
+          onChange={setVehicleId}
+          extra={vehicles.length > 1 ? <option value={ALL_ID}>{allLabel}</option> : null}
+        />
 
-        <div className="flex items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-xl p-1 overflow-x-auto max-w-full">
-          {PERIODS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setPeriodType(p.id)}
-              className="text-xs font-medium px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors shrink-0 whitespace-nowrap"
-              style={{
-                backgroundColor: periodType === p.id ? "var(--amber)" : "transparent",
-                color: periodType === p.id ? "#1A1200" : "var(--text-slate)",
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="defilement-fin -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+          <div className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-line)] bg-[var(--bg-surface)] p-1" role="tablist" aria-label="Période">
+            {PERIODS.map((p) => (
+              <button
+                key={p.id}
+                role="tab"
+                aria-selected={periodType === p.id}
+                onClick={() => setPeriodType(p.id)}
+                className="shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold"
+                style={{
+                  backgroundColor: periodType === p.id ? "var(--amber)" : "transparent",
+                  color: periodType === p.id ? "#1A1200" : "var(--text-slate)",
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {periodType === "personnalise" && (
-        <div className="flex flex-wrap items-center gap-2 mb-4 text-sm">
-          <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5 text-xs min-w-0" />
-          <span className="text-[var(--text-slate-light)] text-xs">au</span>
-          <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5 text-xs min-w-0" />
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <input type="date" aria-label="Début de période" value={customStart} max={customEnd} onChange={(e) => setCustomStart(e.target.value)} className="champ w-auto" />
+          <span className="text-xs text-[var(--text-slate-light)]">au</span>
+          <input type="date" aria-label="Fin de période" value={customEnd} min={customStart} onChange={(e) => setCustomEnd(e.target.value)} className="champ w-auto" />
         </div>
       )}
 
-      <div className="road-divider mb-6" style={{ color: "var(--amber)" }} />
-
       {loading ? (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-3.5">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-[104px] sm:h-[118px]" />
-            ))}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="squelette h-[118px]" />)}
           </div>
-          <Skeleton className="h-[280px] mt-6" />
+          <div className="squelette mt-5 h-[320px]" />
         </>
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-3.5">
-            <KpiCard icon={Coins} label="Recette totale" value={`${fmt(cur.recette)} F`} accent={COLORS.amber} t={trendCalc(cur.recette, prev.recette)} caption={vsLabel} spark={sparkSeries.recette} />
-            <KpiCard icon={Wallet} label="Dépenses totales" value={`${fmt(cur.depenses)} F`} accent={COLORS.red} t={trendCalc(cur.depenses, prev.depenses)} invert caption={vsLabel} spark={sparkSeries.depenses} />
-            <KpiCard icon={TrendingUp} label="Bénéfice" value={`${fmt(cur.benefice)} F`} accent={COLORS.green} t={trendCalc(cur.benefice, prev.benefice)} caption={vsLabel} spark={sparkSeries.benefice} />
-            <KpiCard icon={HandCoins} label="Net versé au propriétaire" value={`${fmt(cur.net)} F`} accent={COLORS.fleet} t={trendCalc(cur.net, prev.net)} caption={vsLabel} spark={sparkSeries.net} />
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <KpiCard icon={Coins} label="Recette totale" value={fmtF(cur.recette)} accent={COLORS.amber} t={trendCalc(cur.recette, prev.recette)} caption={vsLabel} spark={sparkSeries.recette} />
+            <KpiCard icon={Wallet} label="Dépenses totales" value={fmtF(cur.depenses)} accent={COLORS.red} t={trendCalc(cur.depenses, prev.depenses)} invert caption={vsLabel} spark={sparkSeries.depenses} />
+            <KpiCard icon={TrendingUp} label="Bénéfice" value={fmtF(cur.benefice)} accent={COLORS.green} t={trendCalc(cur.benefice, prev.benefice)} caption={vsLabel} spark={sparkSeries.benefice} />
+            <KpiCard icon={HandCoins} label="Net versé au propriétaire" value={fmtF(cur.net)} accent={COLORS.fleet} t={trendCalc(cur.net, prev.net)} caption={vsLabel} spark={sparkSeries.net} />
             <KpiCard icon={CalendarCheck} label="Jours d'activité" value={cur.jours} accent={COLORS.purple} t={trendCalc(cur.jours, prev.jours)} caption={vsLabel} />
-            <KpiCard icon={Gauge} label="Taux de marge" value={`${cur.marge.toFixed(0)}%`} accent={COLORS.green} t={trendCalc(cur.marge, prev.marge)} caption={vsLabel} />
+            <KpiCard icon={Gauge} label="Taux de marge" value={`${cur.marge.toFixed(0)} %`} accent={COLORS.green} t={trendCalc(cur.marge, prev.marge)} caption={vsLabel} />
           </div>
 
-          {chartData.length === 0 ? (
-            <div className="surface-card rounded-2xl p-8 text-center text-sm text-[var(--text-slate-light)] mt-6">
-              Aucune saisie sur la période sélectionnée.
-            </div>
-          ) : (
-            <div className="surface-card pro-card rounded-2xl p-5 mt-6">
-              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-                <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>
-                  {activeMetric.label} par {GRANULARITY_LABEL[granularity]}
-                </div>
-                <div className="flex items-center gap-1 bg-[var(--bg-page)] border border-[var(--border-line)] rounded-xl p-1">
-                  {METRICS.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => setMetric(m.id)}
-                      className="text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
-                      style={{
-                        backgroundColor: metric === m.id ? COLORS[m.color] : "transparent",
-                        color: metric === m.id ? "#fff" : COLORS.slate,
-                      }}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
+          <section className="carte mt-5 p-4 sm:p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-[var(--text-ink)]">
+                {activeMetric.label} par {GRANULARITY_LABEL[granularity]}
+              </h2>
+              <div className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-line)] bg-[var(--bg-page)] p-1">
+                {METRICS.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => setMetric(m.id)}
+                    aria-pressed={metric === m.id}
+                    className="rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                    style={{
+                      backgroundColor: metric === m.id ? COLORS[m.color] : "transparent",
+                      color: metric === m.id ? "#fff" : COLORS.slate,
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
               </div>
+            </div>
+            {chartData.length === 0 ? (
+              <Vide icone={BarChart3} titre="Aucune saisie sur cette période">
+                Choisissez une autre période, ou enregistrez un versement.
+              </Vide>
+            ) : (
               <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                   <CartesianGrid stroke={COLORS.line} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => `${v / 1000}k`} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey={metric} radius={[4, 4, 0, 0]}>
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} interval="preserveStartEnd" minTickGap={8} />
+                  <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={44} tickFormatter={fmtAxe} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "color-mix(in srgb, var(--text-slate) 8%, transparent)" }} />
+                  <Bar dataKey={metric} radius={[5, 5, 0, 0]} maxBarSize={44}>
                     {chartData.map((d, i) => (
                       <Cell key={i} fill={metric === "Bénéfice" ? (d.Bénéfice >= 0 ? COLORS.green : COLORS.red) : COLORS[activeMetric.color]} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-          )}
+            )}
+          </section>
         </>
       )}
 
       {!loading && recentEntries.length > 0 && (
-        <div className="surface-card rounded-2xl mt-6 overflow-hidden">
-          <div className="px-5 py-4 text-sm font-semibold border-b" style={{ color: COLORS.ink, borderColor: COLORS.line }}>
-            7 derniers versements ajoutés
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm font-figures">
+        <section className="carte mt-5 overflow-hidden">
+          <h2 className="border-b border-[var(--border-line)] px-4 py-3.5 text-sm font-semibold text-[var(--text-ink)] sm:px-5">
+            Derniers versements saisis
+          </h2>
+          <div className="defilement-fin overflow-x-auto">
+            <table className="tableau">
               <thead>
-                <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                  {[...(isAllMode ? ["Véhicule"] : []), "Date", "Receveur", "Recette", "Gazoil", "Autres", "Net versé", ""].map((h, i) => (
-                    <th key={h + i} className="text-left px-5 py-2.5 font-sans font-medium text-xs uppercase tracking-wide text-[var(--text-slate)]">{h}</th>
-                  ))}
+                <tr>
+                  <th>Date</th>
+                  {isAllMode && <th>Véhicule</th>}
+                  <th className="hidden md:table-cell">Receveur</th>
+                  <th className="num">Recette</th>
+                  <th className="num hidden sm:table-cell">Gazoil</th>
+                  <th className="num hidden sm:table-cell">Autres</th>
+                  <th className="num">Net versé</th>
+                  <th className="w-10"><span className="sr-only">Remarque</span></th>
                 </tr>
               </thead>
               <tbody>
-                {recentEntries.map((e) => (
-                  <Fragment key={`${e.vehicle_id}-${e.date}`}>
-                  <tr
-                    className="border-t"
-                    style={{ borderColor: COLORS.line, color: Number(e.recette) === 0 ? "var(--text-slate-light)" : COLORS.ink }}
-                  >
-                    {isAllMode && (
-                      <td className="px-5 py-2 font-sans text-xs text-[var(--text-slate-light)]">
-                        {vehicleById[e.vehicle_id] ? `${vehicleById[e.vehicle_id].marque} — ${vehicleById[e.vehicle_id].immatriculation}` : "—"}
-                      </td>
-                    )}
-                    <td className="px-5 py-2">{e.date}</td>
-                    <td className="px-5 py-2 font-sans">{e.receveur}</td>
-                    <td className="px-5 py-2">{fmt(e.recette)}</td>
-                    <td className="px-5 py-2">{fmt(e.gazoil)}</td>
-                    <td className="px-5 py-2">{fmt(e.autres)}</td>
-                    <td className="px-5 py-2 font-semibold">{fmt(e.net)}</td>
-                    <td className="px-5 py-2">
-                      {e.note && (
-                        <button
-                          onClick={() => setNoteOuverte(noteOuverte === `${e.vehicle_id}-${e.date}` ? null : `${e.vehicle_id}-${e.date}`)}
-                          title="Voir la remarque de la journée"
-                          className="hover:opacity-70"
-                          style={{ color: noteOuverte === `${e.vehicle_id}-${e.date}` ? COLORS.fleet : "var(--text-slate-light)" }}
-                        >
-                          <MessageSquareText size={14} />
-                        </button>
+                {recentEntries.map((e) => {
+                  const ouverte = noteOuverte === cleLigne(e);
+                  const v = vehicleById[e.vehicle_id];
+                  return (
+                    <Fragment key={cleLigne(e)}>
+                      <tr style={{ color: Number(e.recette) === 0 ? "var(--text-slate-light)" : COLORS.ink }}>
+                        <td className="whitespace-nowrap" title={e.date}>{fmtJour(e.date)}</td>
+                        {isAllMode && (
+                          <td className="text-xs text-[var(--text-slate)]">
+                            <span className="whitespace-nowrap">{v ? v.marque : "—"}</span>
+                            {v && <span className="ml-1.5 hidden whitespace-nowrap text-[var(--text-slate-light)] sm:inline">{v.immatriculation}</span>}
+                          </td>
+                        )}
+                        <td className="hidden md:table-cell">{e.receveur || "—"}</td>
+                        <td className="num">{fmt(e.recette)}</td>
+                        <td className="num hidden sm:table-cell">{fmt(e.gazoil)}</td>
+                        <td className="num hidden sm:table-cell">{fmt(e.autres)}</td>
+                        <td className="num font-semibold">{fmt(e.net)}</td>
+                        <td className="!px-2 text-center">
+                          {e.note && (
+                            <button
+                              onClick={() => setNoteOuverte(ouverte ? null : cleLigne(e))}
+                              aria-expanded={ouverte}
+                              aria-label="Voir la remarque de la journée"
+                              title="Voir la remarque de la journée"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[var(--bg-page)]"
+                              style={{ color: ouverte ? COLORS.fleet : "var(--text-slate-light)" }}
+                            >
+                              <MessageSquareText size={15} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {e.note && ouverte && (
+                        <tr style={{ backgroundColor: "var(--bg-page)" }}>
+                          <td colSpan={isAllMode ? 8 : 7}>
+                            <div className="flex items-start gap-2 whitespace-pre-wrap text-xs leading-relaxed text-[var(--text-slate)]">
+                              <MessageSquareText size={14} color={COLORS.fleet} className="mt-0.5 shrink-0" />
+                              {e.note}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                  </tr>
-                  {e.note && noteOuverte === `${e.vehicle_id}-${e.date}` && (
-                    <tr style={{ backgroundColor: "var(--bg-page)" }}>
-                      <td colSpan={isAllMode ? 9 : 8} className="px-5 py-3">
-                        <div className="flex items-start gap-2 font-sans text-xs leading-relaxed text-[var(--text-slate)] whitespace-pre-wrap">
-                          <MessageSquareText size={14} color={COLORS.fleet} className="mt-0.5 shrink-0" />
-                          {e.note}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  </Fragment>
-                ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
 
       {!loading && (
-        <div className="surface-card pro-card rounded-2xl p-5 mt-6">
-          <div className="flex items-center gap-2 mb-3.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 16%, transparent)" }}>
+        <section className="carte mt-5 p-4 sm:p-5">
+          <div className="mb-3.5 flex items-center gap-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 14%, transparent)" }}>
               <Search size={15} color={COLORS.fleet} />
             </div>
-            <div className="text-sm font-semibold" style={{ color: COLORS.ink }}>Rechercher un versement par date</div>
+            <h2 className="text-sm font-semibold text-[var(--text-ink)]">Retrouver le versement d&apos;un jour</h2>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="date"
+              aria-label="Date du versement recherché"
               value={searchDate}
               onChange={(e) => setSearchDate(e.target.value)}
-              className="bg-[var(--bg-page)] border border-[var(--border-line)] rounded-lg px-3 py-2 text-sm min-w-0"
+              className="champ w-auto"
             />
             {searchDate && (
-              <button onClick={() => setSearchDate("")} className="text-xs text-[var(--text-slate-light)] underline underline-offset-2">
-                Effacer
-              </button>
+              <button onClick={() => setSearchDate("")} className="btn btn-discret btn-petit">Effacer</button>
             )}
           </div>
 
           {searchDate && (
             searchResults.length > 0 ? (
-              <div className="flex flex-col gap-4 mt-4">
+              <div className="mt-4 flex flex-col gap-4">
                 {searchResults.map((r) => (
-                  <div key={`${r.vehicle_id}-${r.date}`}>
+                  <div key={cleLigne(r)}>
                     {isAllMode && vehicleById[r.vehicle_id] && (
-                      <div className="text-xs font-semibold mb-2" style={{ color: COLORS.fleet }}>
+                      <div className="mb-2 text-xs font-semibold" style={{ color: COLORS.fleet }}>
                         {vehicleById[r.vehicle_id].marque} — {vehicleById[r.vehicle_id].immatriculation}
                       </div>
                     )}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                      <DetailItem label="Date" value={r.date} />
+                    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+                      <DetailItem label="Date" value={fmtJour(r.date, { annee: true })} />
                       <DetailItem label="Receveur" value={r.receveur || "—"} />
-                      <DetailItem label="Recette" value={`${fmt(r.recette)} F`} accent={COLORS.amber} />
-                      <DetailItem label="Gazoil" value={`${fmt(r.gazoil)} F`} caption={r.gazoil_note} accent={COLORS.red} />
-                      <DetailItem label="Autres dépenses" value={`${fmt(r.autres)} F`} caption={r.autres_note} accent={COLORS.red} />
-                      <DetailItem label="Total caisse" value={`${fmt(r.total_caisse)} F`} />
-                      <DetailItem label="Net versé" value={`${fmt(r.net)} F`} accent={COLORS.green} />
+                      <DetailItem label="Recette" value={fmtF(r.recette)} accent={COLORS.amber} />
+                      <DetailItem label="Gazoil" value={fmtF(r.gazoil)} caption={r.gazoil_note} accent={COLORS.red} />
+                      <DetailItem label="Autres dépenses" value={fmtF(r.autres)} caption={r.autres_note} accent={COLORS.red} />
+                      <DetailItem label="Total caisse" value={fmtF(r.total_caisse)} />
+                      <DetailItem label="Net versé" value={fmtF(r.net)} accent={COLORS.green} />
                     </div>
                     {r.note && (
-                      <div
-                        className="flex items-start gap-2.5 rounded-xl px-4 py-3 mt-2.5 border text-xs leading-relaxed text-[var(--text-slate)] whitespace-pre-wrap"
-                        style={{
-                          borderColor: "color-mix(in srgb, var(--fleet-bright) 30%, transparent)",
-                          backgroundColor: "color-mix(in srgb, var(--fleet-bright) 6%, transparent)",
-                        }}
-                      >
-                        <MessageSquareText size={15} color={COLORS.fleet} className="mt-0.5 shrink-0" />
-                        <div>
-                          <div className="font-semibold mb-0.5" style={{ color: COLORS.ink }}>
-                            Remarque sur la journée
-                          </div>
-                          {r.note}
-                        </div>
-                      </div>
+                      <Bandeau icone={MessageSquareText} className="mt-2.5 whitespace-pre-wrap">
+                        <div className="mb-0.5 font-semibold text-[var(--text-ink)]">Remarque sur la journée</div>
+                        {r.note}
+                      </Bandeau>
                     )}
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-sm text-[var(--text-slate-light)] mt-4">
+              <div className="mt-4 text-sm text-[var(--text-slate-light)]">
                 {isAllMode
-                  ? `Aucune saisie trouvée le ${searchDate}.`
-                  : `Aucune saisie trouvée le ${searchDate} pour ${vehicle?.marque} — ${vehicle?.immatriculation}.`}
+                  ? `Aucune saisie le ${fmtDateLongue(searchDate)}.`
+                  : `Aucune saisie le ${fmtDateLongue(searchDate)} pour ${vehicle?.marque} — ${vehicle?.immatriculation}.`}
               </div>
             )
           )}
-        </div>
+        </section>
       )}
 
-      <div className="text-xs text-[var(--text-slate-light)] mt-8 pb-10">
+      <p className="mt-6 text-xs text-[var(--text-slate-light)]">
         {role === "admin"
           ? "Accès gestionnaire — visibilité sur l'ensemble de la flotte."
           : "Accès propriétaire — visibilité limitée à vos véhicules."}
-      </div>
+      </p>
     </main>
   );
 }

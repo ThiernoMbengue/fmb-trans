@@ -10,8 +10,9 @@ import {
   FileSpreadsheet, FileText, SlidersHorizontal, CalendarRange, Calculator,
   CalendarDays, ShieldCheck, Wrench, UserCog, Receipt, PiggyBank,
 } from "lucide-react";
-import { generateVersementsPDF, generateDossierInvestisseurPDF } from "@/lib/pdf/report";
 import { telechargerPDF, telechargerTexte } from "@/lib/telecharger";
+import { fmt } from "@/lib/format";
+import { useToast } from "@/components/ui";
 
 const COLORS = {
   ink: "var(--text-ink)", fleet: "var(--fleet-bright)", amber: "var(--amber)",
@@ -50,18 +51,7 @@ const estLocationSansChauffeur = (e) =>
     (e.sans_chauffeur == null && !Number(e.gazoil) && !Number(e.autres)));
 const estJourAvecChauffeur = (e) => Number(e.recette) > 0 && !estLocationSansChauffeur(e);
 
-const fmt = (n) => {
-  const num = Math.round(Number(n) || 0);
-  const neg = num < 0;
-  const digits = Math.abs(num).toString();
-  let out = "";
-  for (let i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 === 0) out += " ";
-    out += digits[i];
-  }
-  return (neg ? "-" : "") + out;
-};
-const fmtM = (n) => `${(Math.round(Number(n) || 0) / 1000000).toFixed(2)} M`;
+const fmtM = (n) => `${(Math.round(Number(n) || 0) / 1000000).toFixed(2).replace(".", ",")} M`;
 
 const monthKeyOf = (iso) => iso.slice(0, 7);
 const addMonthsToKey = (key, n) => {
@@ -185,7 +175,8 @@ function ParamField({ label, value, onChange, step = 1000, suffix, aide }) {
           step={step}
           value={value}
           onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
-          className="w-full text-sm font-figures bg-[var(--bg-page)] border border-[var(--border-line)] rounded-lg px-2.5 py-1.5 min-w-0"
+          inputMode="numeric"
+          className="champ font-figures min-w-0 py-1.5"
         />
         <span className="text-[11px] text-[var(--text-slate-light)] shrink-0 whitespace-nowrap">{suffix}</span>
       </div>
@@ -199,6 +190,7 @@ function ParamField({ label, value, onChange, step = 1000, suffix, aide }) {
 export default function InvestisseurClient({
   vehicle, entries, prixAchat, prixReference, aujourdhui, flotte,
 }) {
+  const toast = useToast();
   const [chauffeurParJour, setChauffeurParJour] = useState(DEFAUTS.chauffeurParJour);
   const [assuranceMensuelle, setAssuranceMensuelle] = useState(DEFAUTS.assuranceMensuelle);
   const [coutEntretien, setCoutEntretien] = useState(DEFAUTS.coutEntretien);
@@ -434,19 +426,28 @@ export default function InvestisseurClient({
 
   // Sur mobile la remise d'un fichier peut échouer (stockage plein, partage
   // refusé) : mieux vaut le dire que laisser un bouton qui ne fait rien.
-  const remettre = (action) => action().catch((e) => alert("Document indisponible : " + (e?.message || "erreur inconnue")));
+  const remettre = (action) =>
+    Promise.resolve()
+      .then(action)
+      .catch((e) => toast("Document indisponible : " + (e?.message || "erreur inconnue"), "error"));
 
   const exportDossierPDF = () =>
-    remettre(() => telechargerPDF(
-      generateDossierInvestisseurPDF(vehicle, dossierPourPDF()),
-      `dossier_investisseur_${vehicle.immatriculation}_${base.finPeriode}.pdf`
-    ));
+    remettre(async () => {
+      const { generateDossierInvestisseurPDF } = await import("@/lib/pdf/report");
+      await telechargerPDF(
+        generateDossierInvestisseurPDF(vehicle, dossierPourPDF()),
+        `dossier_investisseur_${vehicle.immatriculation}_${base.finPeriode}.pdf`
+      );
+    });
 
   const exportVersementsPDF = () =>
-    remettre(() => telechargerPDF(
-      generateVersementsPDF(vehicle, base.sorted, base.premiereDate, base.derniereSaisie),
-      `releve_versements_${vehicle.immatriculation}.pdf`
-    ));
+    remettre(async () => {
+      const { generateVersementsPDF } = await import("@/lib/pdf/report");
+      await telechargerPDF(
+        generateVersementsPDF(vehicle, base.sorted, base.premiereDate, base.derniereSaisie),
+        `releve_versements_${vehicle.immatriculation}.pdf`
+      );
+    });
 
   const exportCSV = () => {
     const entete = ["Date", "Receveur", "Recette", "Depenses du jour", "Note", "Remarque du jour", "Net remonte"];
@@ -466,7 +467,7 @@ export default function InvestisseurClient({
   const autresVehicules = (flotte || []).filter((v) => v.id !== vehicle.id);
 
   return (
-    <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto animate-fade-up flex flex-col gap-4">
+    <main className="page animate-fade-up flex flex-col gap-4">
 
       {/* ═══ Résumé exécutif ═══ */}
       <section className="surface-card rounded-3xl p-5 sm:p-7 overflow-hidden relative">
@@ -511,12 +512,12 @@ export default function InvestisseurClient({
               icon={CalendarClock} fort accent={COLORS.amber}
               label="Capital remboursé en"
               value={invest.moisRentabiliteReference != null ? `${invest.moisRentabiliteReference.toFixed(0)} mois` : "—"}
-              caption={invest.moisRentabiliteReference != null ? `soit ${(invest.moisRentabiliteReference / 12).toFixed(1)} an(s)` : null}
+              caption={invest.moisRentabiliteReference != null ? `soit ${(invest.moisRentabiliteReference / 12).toFixed(1).replace(".", ",")} an(s)` : null}
             />
             <StatCard
               icon={Percent} fort accent={COLORS.purple}
               label="Rendement annuel"
-              value={`${invest.rendementReference.toFixed(1)} %`}
+              value={`${invest.rendementReference.toFixed(1).replace(".", ",")} %`}
               caption={`sur ${fmt(prixReference)} F investis`}
             />
           </div>
@@ -542,7 +543,7 @@ export default function InvestisseurClient({
           <div className="rounded-xl bg-[var(--bg-page)] p-4">
             <div className="text-[11px] uppercase tracking-wide text-[var(--text-slate)]">Historique disponible</div>
             <div className="text-sm font-semibold mt-1" style={{ color: COLORS.ink }}>
-              {base.joursObserves} jours ({base.moisObserves.toFixed(1)} mois)
+              {base.joursObserves} jours ({base.moisObserves.toFixed(1).replace(".", ",")} mois)
             </div>
             <div className="text-[11px] text-[var(--text-slate-light)] mt-1 leading-relaxed">
               Dont {base.joursTravailles} jours effectivement travaillés :{" "}
@@ -602,7 +603,7 @@ export default function InvestisseurClient({
         >
           <Info size={15} color={COLORS.amber} className="mt-0.5 shrink-0" />
           <div>
-            <strong className="text-[var(--text-ink)]">Un seul véhicule, {base.moisObserves.toFixed(1)} mois d&apos;historique.</strong>{" "}
+            <strong className="text-[var(--text-ink)]">Un seul véhicule, {base.moisObserves.toFixed(1).replace(".", ",")} mois d&apos;historique.</strong>{" "}
             C&apos;est une base réelle mais courte : elle ne capture ni la saisonnalité complète,
             ni une panne majeure, ni l&apos;usure des années suivantes. Les montants ci-dessous
             décrivent fidèlement ce qui s&apos;est passé — ils ne constituent pas une garantie de
@@ -699,7 +700,7 @@ export default function InvestisseurClient({
               <div className="flex items-center justify-between text-xs text-[var(--text-slate)] mb-2">
                 <span>Capital remboursé à ce jour</span>
                 <span className="font-figures font-bold text-sm" style={{ color: COLORS.green }}>
-                  {invest.pctRembourse.toFixed(1)} %
+                  {invest.pctRembourse.toFixed(1).replace(".", ",")} %
                 </span>
               </div>
               <div className="h-2.5 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border-line)" }}>
@@ -737,7 +738,7 @@ export default function InvestisseurClient({
             </defs>
             <CartesianGrid stroke={COLORS.line} vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={{ stroke: COLORS.line }} tickLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={52} tickFormatter={(v) => `${(v / 1000000).toFixed(1)}M`} />
+            <YAxis tick={{ fontSize: 10, fill: COLORS.slate }} axisLine={false} tickLine={false} width={52} tickFormatter={(v) => `${(v / 1000000).toFixed(1).replace(".", ",")}M`} />
             <Tooltip content={<ChartTooltip />} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <ReferenceLine
@@ -774,8 +775,8 @@ export default function InvestisseurClient({
           </BarChart>
         </ResponsiveContainer>
 
-        <div className="overflow-x-auto mt-5 -mx-5 sm:-mx-6">
-          <table className="w-full text-sm font-figures">
+        <div className="defilement-fin overflow-x-auto mt-5 -mx-5 sm:-mx-6">
+          <table className="w-full whitespace-nowrap text-sm font-figures">
             <thead>
               <tr style={{ backgroundColor: "var(--bg-page)" }}>
                 {["Mois", "Jours chauffeur", "Jours location", "Recette", "Frais quotidiens", "Chauffeur", "Charges fixes", "Net investisseur"].map((h) => (
@@ -821,7 +822,8 @@ export default function InvestisseurClient({
               <input
                 type="number" min={0} step={100000} value={prixSimule}
                 onChange={(e) => setPrixSimule(Math.max(0, Number(e.target.value) || 0))}
-                className="w-48 text-base font-figures font-semibold bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2"
+                inputMode="numeric"
+                className="champ font-figures w-full max-w-[12rem] text-base font-semibold"
               />
               <span className="text-sm text-[var(--text-slate)]">FCFA</span>
             </div>
@@ -832,8 +834,8 @@ export default function InvestisseurClient({
           </label>
         </div>
 
-        <div className="overflow-x-auto -mx-5 sm:-mx-6">
-          <table className="w-full text-sm font-figures">
+        <div className="defilement-fin overflow-x-auto -mx-5 sm:-mx-6">
+          <table className="w-full whitespace-nowrap text-sm font-figures">
             <thead>
               <tr style={{ backgroundColor: "var(--bg-page)" }}>
                 {["Hypothèse", "Revenu net / mois", "Revenu net / an", "Rendement annuel", "Capital remboursé en"].map((h) => (
@@ -854,13 +856,13 @@ export default function InvestisseurClient({
                   </td>
                   <td className="px-5 sm:px-6 py-3 font-semibold">{fmt(s.mensuel)} F</td>
                   <td className="px-5 sm:px-6 py-3">{fmt(s.annuel)} F</td>
-                  <td className="px-5 sm:px-6 py-3 font-bold" style={{ color: s.color }}>{s.rendement.toFixed(1)} %</td>
+                  <td className="px-5 sm:px-6 py-3 font-bold" style={{ color: s.color }}>{s.rendement.toFixed(1).replace(".", ",")} %</td>
                   <td className="px-5 sm:px-6 py-3 whitespace-nowrap">
                     {s.mois != null ? (
                       <>
                         {s.mois.toFixed(0)} mois
                         <span className="text-[11px] font-sans text-[var(--text-slate-light)] ml-1.5">
-                          ({(s.mois / 12).toFixed(1)} an)
+                          ({(s.mois / 12).toFixed(1).replace(".", ",")} an)
                         </span>
                       </>
                     ) : "—"}
@@ -928,26 +930,14 @@ export default function InvestisseurClient({
         couleur={COLORS.fleet}
         sous="Tout est vérifiable : téléchargez le dossier complet ou les données brutes pour contrôler vous-même chaque chiffre."
       >
-        <div className="flex flex-wrap gap-2.5">
-          <button
-            onClick={exportDossierPDF}
-            className="flex items-center gap-2 text-sm font-semibold px-5 py-3 rounded-xl text-white"
-            style={{ backgroundColor: COLORS.fleet }}
-          >
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
+          <button onClick={exportDossierPDF} className="btn btn-primaire px-5 py-3">
             <FileText size={16} /> Dossier d&apos;investissement (PDF)
           </button>
-          <button
-            onClick={exportVersementsPDF}
-            className="flex items-center gap-2 text-sm font-medium px-5 py-3 rounded-xl border"
-            style={{ borderColor: COLORS.line, color: COLORS.ink }}
-          >
+          <button onClick={exportVersementsPDF} className="btn btn-contour px-5 py-3">
             <FileText size={16} /> Relevé détaillé des versements
           </button>
-          <button
-            onClick={exportCSV}
-            className="flex items-center gap-2 text-sm font-medium px-5 py-3 rounded-xl border"
-            style={{ borderColor: COLORS.line, color: COLORS.ink }}
-          >
+          <button onClick={exportCSV} className="btn btn-contour px-5 py-3">
             <FileSpreadsheet size={16} /> Données brutes (Excel)
           </button>
         </div>
@@ -962,7 +952,7 @@ export default function InvestisseurClient({
         <ul className="text-xs text-[var(--text-slate)] leading-relaxed flex flex-col gap-2 list-disc pl-4">
           <li>
             <strong>Période retenue :</strong> du {fmtDateLong(base.premiereDate)} à aujourd&apos;hui,
-            soit {base.joursObserves} jours ({base.moisObserves.toFixed(1)} mois), dont{" "}
+            soit {base.joursObserves} jours ({base.moisObserves.toFixed(1).replace(".", ",")} mois), dont{" "}
             {base.joursTravailles} jours travaillés. Les jours sans activité sont inclus dans la
             période, afin de ne pas gonfler les moyennes mensuelles.
           </li>
@@ -990,7 +980,7 @@ export default function InvestisseurClient({
           </li>
           <li>
             <strong>Portée statistique :</strong> ces chiffres proviennent d&apos;un seul véhicule
-            observé sur {base.moisObserves.toFixed(1)} mois. Les performances passées ne préjugent pas
+            observé sur {base.moisObserves.toFixed(1).replace(".", ",")} mois. Les performances passées ne préjugent pas
             des performances futures. Ce document est informatif et ne constitue pas une offre
             d&apos;investissement au sens réglementaire.
           </li>

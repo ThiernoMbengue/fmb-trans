@@ -5,6 +5,7 @@ import { PARAMETRE_MOT_DE_PASSE } from "@/lib/investor-access";
 import ComptesClient from "./comptes-client";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Comptes" };
 
 export default async function ComptesPage() {
   const supabase = createClient();

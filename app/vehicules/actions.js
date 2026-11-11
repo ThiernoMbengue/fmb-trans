@@ -4,41 +4,70 @@ import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/supabase/role";
 import { revalidatePath } from "next/cache";
 
-export async function addVehicle(formData) {
+// Les règles de la base (RLS) refusent déjà ces écritures à un compte qui
+// n'est pas gestionnaire ; la vérification ici donne un message clair plutôt
+// qu'un échec silencieux.
+async function exigerAdmin() {
   const supabase = createClient();
+  const { role } = await getRole(supabase);
+  return role === "admin" ? { supabase } : { error: "Action réservée au gestionnaire." };
+}
 
-  const marque = formData.get("marque");
-  const immatriculation = formData.get("immatriculation");
-  const proprietaire = formData.get("proprietaire");
-  const chauffeur = formData.get("chauffeur");
-  const taux_chauffeur = Number(formData.get("taux_chauffeur")) || 5000;
-  const owner_id = formData.get("owner_id") || null;
+const messageErreur = (error) => error?.message || "Erreur inattendue";
 
-  if (!marque || !immatriculation) {
-    return { error: "Marque et immatriculation requises" };
+// Même règle que partout ailleurs dans l'application : un taux vide ou nul
+// retombe sur 5 000 F par jour travaillé.
+const tauxValide = (valeur) => {
+  const n = Math.round(Number(valeur));
+  return Number.isFinite(n) && n > 0 ? n : 5000;
+};
+
+export async function addVehicle(formData) {
+  try {
+    const { supabase, error: refus } = await exigerAdmin();
+    if (refus) return { error: refus };
+
+    const texte = (cle) => String(formData.get(cle) || "").trim();
+    const marque = texte("marque");
+    const immatriculation = texte("immatriculation").toUpperCase();
+    if (!marque || !immatriculation) {
+      return { error: "La marque et l'immatriculation sont obligatoires." };
+    }
+
+    const { error } = await supabase.from("vehicles").insert({
+      marque,
+      immatriculation,
+      proprietaire: texte("proprietaire") || null,
+      chauffeur: texte("chauffeur") || null,
+      taux_chauffeur: tauxValide(formData.get("taux_chauffeur")),
+      owner_id: formData.get("owner_id") || null,
+    });
+    if (error) return { error: messageErreur(error) };
+
+    revalidatePath("/vehicules");
+    revalidatePath("/");
+    revalidatePath("/saisie");
+    return { success: true };
+  } catch (e) {
+    return { error: e?.message || "Erreur inattendue" };
   }
-
-  const { error } = await supabase
-    .from("vehicles")
-    .insert({ marque, immatriculation, proprietaire, chauffeur, taux_chauffeur, owner_id });
-
-  if (error) return { error: error.message };
-
-  revalidatePath("/vehicules");
-  revalidatePath("/");
-  revalidatePath("/saisie");
-  return { success: true };
 }
 
 export async function deleteVehicle(id) {
-  const supabase = createClient();
-  const { error } = await supabase.from("vehicles").delete().eq("id", id);
-  if (error) return { error: error.message };
+  try {
+    const { supabase, error: refus } = await exigerAdmin();
+    if (refus) return { error: refus };
 
-  revalidatePath("/vehicules");
-  revalidatePath("/");
-  revalidatePath("/saisie");
-  return { success: true };
+    const { error } = await supabase.from("vehicles").delete().eq("id", id);
+    if (error) return { error: messageErreur(error) };
+
+    revalidatePath("/vehicules");
+    revalidatePath("/");
+    revalidatePath("/saisie");
+    return { success: true };
+  } catch (e) {
+    return { error: e?.message || "Erreur inattendue" };
+  }
 }
 
 /**
@@ -51,16 +80,15 @@ export async function deleteVehicle(id) {
  */
 export async function updateVehicle(vehicleId, champs) {
   try {
-    const supabase = createClient();
-    const { role } = await getRole(supabase);
-    if (role !== "admin") return { error: "Accès refusé" };
+    const { supabase, error: refus } = await exigerAdmin();
+    if (refus) return { error: refus };
 
     if (!vehicleId) return { error: "Véhicule manquant" };
 
     const marque = (champs.marque || "").trim();
     const immatriculation = (champs.immatriculation || "").trim();
     if (!marque || !immatriculation) {
-      return { error: "Marque et immatriculation requises" };
+      return { error: "La marque et l'immatriculation sont obligatoires." };
     }
 
     const { error } = await supabase
@@ -70,11 +98,11 @@ export async function updateVehicle(vehicleId, champs) {
         immatriculation,
         proprietaire: (champs.proprietaire || "").trim() || null,
         chauffeur: (champs.chauffeur || "").trim() || null,
-        taux_chauffeur: Number(champs.taux_chauffeur) || 5000,
+        taux_chauffeur: tauxValide(champs.taux_chauffeur),
       })
       .eq("id", vehicleId);
 
-    if (error) return { error: error.message };
+    if (error) return { error: messageErreur(error) };
 
     revalidatePath("/vehicules");
     revalidatePath("/saisie");
@@ -90,7 +118,9 @@ export async function updateVehicle(vehicleId, champs) {
 // propriétaire l'accès à son véhicule.
 export async function updateVehicleOwner(vehicleId, ownerId) {
   try {
-    const supabase = createClient();
+    const { supabase, error: refus } = await exigerAdmin();
+    if (refus) return { error: refus };
+
     const { error } = await supabase
       .from("vehicles")
       .update({ owner_id: ownerId || null })

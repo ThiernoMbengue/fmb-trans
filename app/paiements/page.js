@@ -5,6 +5,8 @@ import PaiementsClient from "./paiements-client";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Paiements" };
+
 export default async function PaiementsPage() {
   const supabase = createClient();
   const { role } = await getRole(supabase);

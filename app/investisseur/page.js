@@ -2,10 +2,12 @@ import { cookies } from "next/headers";
 import { Lock, AlertCircle, TrendingUp } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { descripteurSecret, jetonSession, lireHachage } from "@/lib/investor-access";
+import { lireTout } from "@/lib/supabase/lire-tout";
 import { unlockInvestor } from "./actions";
 import InvestisseurClient from "./investisseur-client";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Espace investisseur" };
 
 // Montant reellement investi dans le vehicule de reference. C'est le seul
 // vehicule disposant de donnees d'exploitation : tout le dossier est bati
@@ -17,45 +19,43 @@ const VEHICLE_IMMAT = process.env.INVESTOR_VEHICLE_IMMAT || "AB-449-JL";
 
 function Gate({ error }) {
   return (
-    <main className="min-h-[80vh] flex items-center justify-center px-4">
-      <div className="w-full max-w-sm surface-card rounded-2xl p-6">
+    <main className="flex min-h-[78vh] items-center justify-center px-4 py-10">
+      <div className="carte animate-fade-up w-full max-w-sm p-6 sm:p-7">
         <div
-          className="w-11 h-11 rounded-xl flex items-center justify-center mb-4"
-          style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 16%, transparent)" }}
+          className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl"
+          style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 14%, transparent)" }}
         >
-          <TrendingUp size={20} color="var(--fleet-bright)" />
+          <TrendingUp size={22} color="var(--fleet-bright)" />
         </div>
         <h1 className="font-display text-xl font-bold tracking-tight text-[var(--text-ink)]">
           Espace investisseur
         </h1>
-        <p className="text-xs text-[var(--text-slate)] mt-1.5 mb-5 leading-relaxed">
+        <p className="mb-5 mt-1.5 text-sm leading-relaxed text-[var(--text-slate)]">
           Dossier de performance d&apos;un véhicule de la flotte FMB Trans-Mobilité Services.
-          Entrez le mot de passe qui vous a été communiqué.
+          Saisissez le mot de passe qui vous a été communiqué.
         </p>
 
         {error && (
-          <div className="flex items-center gap-2 text-xs text-white bg-[var(--red)] rounded-lg px-3 py-2 mb-4">
-            <AlertCircle size={14} /> Mot de passe incorrect.
+          <div
+            role="alert"
+            className="mb-4 flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium"
+            style={{
+              color: "var(--red)",
+              borderColor: "color-mix(in srgb, var(--red) 35%, transparent)",
+              backgroundColor: "color-mix(in srgb, var(--red) 8%, transparent)",
+            }}
+          >
+            <AlertCircle size={16} className="shrink-0" /> Mot de passe incorrect.
           </div>
         )}
 
-        <form action={unlockInvestor} className="flex flex-col gap-3">
+        <form action={unlockInvestor} className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-[var(--text-slate)]">Mot de passe</span>
-            <input
-              type="password"
-              name="password"
-              required
-              autoFocus
-              className="w-full text-sm bg-[var(--bg-surface)] border border-[var(--border-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--fleet)]/30"
-            />
+            <span className="etiquette">Mot de passe</span>
+            <input type="password" name="password" required autoFocus autoComplete="current-password" className="champ" />
           </label>
-          <button
-            type="submit"
-            className="mt-1 flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg text-white"
-            style={{ backgroundColor: "var(--fleet)" }}
-          >
-            <Lock size={14} /> Accéder au dossier
+          <button type="submit" className="btn btn-primaire w-full">
+            <Lock size={15} /> Accéder au dossier
           </button>
         </form>
       </div>
@@ -65,8 +65,8 @@ function Gate({ error }) {
 
 function Message({ children }) {
   return (
-    <main className="px-6 md:px-10 py-10 max-w-2xl mx-auto">
-      <div className="surface-card rounded-2xl p-6 text-sm text-[var(--text-slate)]">{children}</div>
+    <main className="page-etroite">
+      <div className="carte p-6 text-sm leading-relaxed text-[var(--text-slate)]">{children}</div>
     </main>
   );
 }
@@ -101,10 +101,26 @@ export default async function InvestisseurPage({ searchParams }) {
     vehicles.find((v) => (v.marque || "").toUpperCase().includes("QM3")) ||
     vehicles[0];
 
+  // Lecture paginée : au-delà de 1 000 lignes l'API tronque sans prévenir,
+  // et le dossier présenterait une rentabilité calculée sur une partie
+  // seulement de l'historique.
   const [entriesRes, flotteRes] = await Promise.all([
-    admin.from("entries").select("*").eq("vehicle_id", vehicle.id).order("date", { ascending: true }),
-    admin.from("entries").select("vehicle_id,date,recette,net").order("date", { ascending: true }),
+    lireTout(() =>
+      admin.from("entries").select("*").eq("vehicle_id", vehicle.id).order("date", { ascending: true })
+    ),
+    lireTout(() =>
+      admin.from("entries").select("vehicle_id,date,recette,net").order("date", { ascending: true })
+    ),
   ]);
+
+  if (entriesRes.error || flotteRes.error) {
+    return (
+      <Message>
+        <div className="mb-1 font-semibold text-[var(--red)]">Données momentanément indisponibles</div>
+        Le dossier n&apos;a pas pu être chargé. Réessayez dans quelques instants.
+      </Message>
+    );
+  }
 
   const entries = entriesRes.data || [];
 

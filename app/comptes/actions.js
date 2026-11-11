@@ -6,23 +6,34 @@ import { getRole } from "@/lib/supabase/role";
 import { hacherMotDePasse, PARAMETRE_MOT_DE_PASSE } from "@/lib/investor-access";
 import { revalidatePath } from "next/cache";
 
+// Rend l'identifiant du gestionnaire connecté, ou null si la personne n'a
+// pas le droit d'être ici.
 async function assertAdmin() {
   const supabase = createClient();
-  const { role } = await getRole(supabase);
-  if (role !== "admin") return false;
-  return true;
+  const { role, user } = await getRole(supabase);
+  return role === "admin" && user ? user.id : null;
 }
+
+const REFUS = "Action réservée au gestionnaire.";
+
+const traduire = (message = "") => {
+  const m = message.toLowerCase();
+  if (m.includes("already") && m.includes("registered")) return "Un compte existe déjà avec cette adresse e-mail.";
+  if (m.includes("invalid") && m.includes("email")) return "Cette adresse e-mail n'est pas valide.";
+  if (m.includes("password")) return "Mot de passe refusé : il doit comporter au moins 6 caractères.";
+  return message || "Erreur inattendue";
+};
 
 export async function createAccount(formData) {
   try {
-    if (!(await assertAdmin())) return { error: "Accès refusé" };
+    if (!(await assertAdmin())) return { error: REFUS };
 
-    const email = (formData.get("email") || "").trim();
+    const email = (formData.get("email") || "").trim().toLowerCase();
     const password = formData.get("password") || "";
     const nom = (formData.get("nom") || "").trim();
     const role = formData.get("role") === "admin" ? "admin" : "proprietaire";
 
-    if (!email || !password) return { error: "Email et mot de passe requis" };
+    if (!email || !password) return { error: "L'adresse e-mail et le mot de passe sont obligatoires." };
     if (password.length < 6) return { error: "Mot de passe trop court (6 caractères minimum)" };
 
     const admin = createAdminClient();
@@ -33,7 +44,7 @@ export async function createAccount(formData) {
       password,
       email_confirm: true,
     });
-    if (error) return { error: error.message };
+    if (error) return { error: traduire(error.message) };
 
     const { error: profErr } = await admin
       .from("profiles")
@@ -49,12 +60,24 @@ export async function createAccount(formData) {
 
 export async function updateAccount(id, { nom, role }) {
   try {
-    if (!(await assertAdmin())) return { error: "Accès refusé" };
+    const moi = await assertAdmin();
+    if (!moi) return { error: REFUS };
+    if (!id) return { error: "Compte manquant" };
+
+    const modifs = { nom: String(nom || "").trim() || null };
+    if (role === "admin" || role === "proprietaire") {
+      // Un gestionnaire ne peut pas se retirer ses propres droits : il
+      // risquerait de laisser l'application sans aucun gestionnaire.
+      if (id === moi && role !== "admin") {
+        return { error: "Vous ne pouvez pas retirer vos propres droits de gestionnaire." };
+      }
+      modifs.role = role;
+    }
 
     const admin = createAdminClient();
     if (!admin) return { error: MISSING_SERVICE_KEY };
 
-    const { error } = await admin.from("profiles").update({ nom, role }).eq("id", id);
+    const { error } = await admin.from("profiles").update(modifs).eq("id", id);
     if (error) return { error: error.message };
 
     revalidatePath("/comptes");
@@ -66,7 +89,9 @@ export async function updateAccount(id, { nom, role }) {
 
 export async function deleteAccount(id) {
   try {
-    if (!(await assertAdmin())) return { error: "Accès refusé" };
+    const moi = await assertAdmin();
+    if (!moi) return { error: REFUS };
+    if (id === moi) return { error: "Vous ne pouvez pas supprimer votre propre compte." };
 
     const admin = createAdminClient();
     if (!admin) return { error: MISSING_SERVICE_KEY };
@@ -89,7 +114,7 @@ export async function setInvestorPassword(formData) {
   try {
     const supabase = createClient();
     const { role } = await getRole(supabase);
-    if (role !== "admin") return { error: "Accès refusé" };
+    if (role !== "admin") return { error: REFUS };
 
     const motDePasse = (formData.get("password") || "").trim();
     if (motDePasse.length < 4) {
