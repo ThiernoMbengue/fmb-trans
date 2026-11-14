@@ -4,12 +4,14 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Save, Pencil, Trash2, X, Loader2, AlertCircle, Search, Repeat, CalendarRange,
   MessageSquareText, ChevronRight, ChevronDown, ClipboardList, Plus, Bus, KeyRound,
+  ScanLine, Paperclip, ZoomIn, Sparkles, TriangleAlert,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { lireTout } from "@/lib/supabase/lire-tout";
 import { useVehiculeCourant } from "@/lib/vehicule-courant";
 import { fmt, fmtF, fmtJour, fmtPeriode, todayISO, ajouterJours, plageDeJours } from "@/lib/format";
 import { EnTete, SelecteurVehicule, Champ, Bandeau, Vide, Chargement, useToast, useConfirm } from "@/components/ui";
+import { preparerImage } from "@/lib/image";
 import { saveEntry, deleteEntry, saveLocationRange } from "./actions";
 
 const COLORS = { ink: "var(--text-ink)", fleet: "var(--fleet-bright)", green: "var(--green)", red: "var(--red)", amber: "var(--amber)", line: "var(--border-line)" };
@@ -74,6 +76,14 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
   const [form, setForm] = useState(null);
   const [editingDate, setEditingDate] = useState(null);
 
+  // Capture d'écran du chauffeur, jointe à la saisie en cours :
+  // { apercu, blob, etat: "lecture" | "prete", lecture } — ou null.
+  const [capture, setCapture] = useState(null);
+  const [agrandie, setAgrandie] = useState(false);
+  const choixFichier = useRef(null);
+  // Justificatifs déjà enregistrés pour ce véhicule, par date.
+  const [justificatifs, setJustificatifs] = useState({});
+
   // Historique
   const [ligneOuverte, setLigneOuverte] = useState(null);
   const [moisFiltre, setMoisFiltre] = useState("tous");
@@ -98,9 +108,15 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
     const { data, error } = await lireTout(() =>
       supabase.from("entries").select("*").eq("vehicle_id", vId).order("date", { ascending: true })
     );
+    // Les justificatifs arrivent par une migration : si la table n'existe
+    // pas encore, la saisie fonctionne quand même, sans eux.
+    const pieces = await supabase.from("entry_justificatifs").select("id,date,nom,chemin").eq("vehicle_id", vId);
     if (numero !== demande.current) return;
     if (error) toast("Chargement impossible : " + error.message, "error");
     else setEntries(data || []);
+    const parDate = {};
+    for (const j of pieces.error ? [] : pieces.data || []) (parDate[j.date] ||= []).push(j);
+    setJustificatifs(parDate);
     setLoading(false);
   };
 
@@ -113,7 +129,9 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
   // Par défaut, le formulaire propose le lendemain de la dernière saisie —
   // sans jamais dépasser aujourd'hui.
   useEffect(() => {
-    if (!vehicle || editingDate) return;
+    // Une capture en cours de vérification a rempli le formulaire : on ne
+    // l'écrase pas quand le véhicule ou l'historique change.
+    if (!vehicle || editingDate || capture) return;
     const auj = todayISO();
     const suivante = lastDate ? ajouterJours(lastDate, 1) : auj;
     setForm(emptyForm(vehicle.chauffeur, suivante > auj ? auj : suivante));
@@ -138,6 +156,115 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
   const versFormulaire = () =>
     formulaire.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
+  // Échap referme la capture agrandie.
+  useEffect(() => {
+    if (!agrandie) return;
+    const touche = (e) => { if (e.key === "Escape") setAgrandie(false); };
+    window.addEventListener("keydown", touche);
+    return () => window.removeEventListener("keydown", touche);
+  }, [agrandie]);
+
+  const retirerCapture = () => {
+    setCapture((c) => { if (c?.apercu) URL.revokeObjectURL(c.apercu); return null; });
+    setAgrandie(false);
+  };
+
+  // Lit la capture envoyée par le chauffeur et pré-remplit le formulaire.
+  // Rien n'est enregistré : la personne vérifie, corrige, puis valide.
+  const lireCapture = async (fichier) => {
+    if (!fichier) return;
+    let image;
+    try {
+      image = await preparerImage(fichier);
+    } catch (e) {
+      return toast(e?.message || "Image illisible.", "error");
+    }
+
+    setCapture((c) => {
+      if (c?.apercu) URL.revokeObjectURL(c.apercu);
+      return { apercu: URL.createObjectURL(image.blob), blob: image.blob, etat: "lecture", lecture: null };
+    });
+    versFormulaire();
+
+    let lecture = null;
+    try {
+      const reponse = await fetch("/api/ia/lire-versement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: image.base64, type: image.type }),
+      });
+      const corps = await reponse.json().catch(() => ({}));
+      if (!reponse.ok) {
+        // La capture reste jointe comme justificatif, même sans lecture.
+        toast(
+          corps.nonConfiguree
+            ? "La lecture automatique n'est pas encore activée. La capture est jointe : remplissez les montants à la main."
+            : (corps.error || "La lecture a échoué.") + " La capture reste jointe : remplissez les montants à la main.",
+          "warning"
+        );
+      } else {
+        lecture = corps.lecture || null;
+      }
+    } catch {
+      toast("Connexion interrompue pendant la lecture. La capture reste jointe : remplissez les montants à la main.", "warning");
+    }
+
+    setCapture((c) => (c ? { ...c, etat: "prete", lecture } : c));
+    if (!lecture) return;
+
+    if (!lecture.lisible) {
+      return toast("Cette image ne ressemble pas à une capture de versement. Vérifiez-la, ou remplissez la saisie à la main.", "warning");
+    }
+
+    // Le véhicule lu dans le nom du groupe, s'il fait partie de la flotte.
+    const cible = vehicles.find((v) => v.id === lecture.vehicleId) || vehicle;
+    if (cible && cible.id !== vehicleId) setVehicleId(cible.id);
+    setEditingDate(null);
+
+    setForm((actuel) => {
+      const base = emptyForm(cible?.chauffeur, lecture.date || actuel?.date || todayISO());
+      const recette = lecture.recette ?? "";
+      const gazoil = lecture.gazoil ?? "";
+      const autres = lecture.autres ?? "";
+      const caisse = (Number(recette) || 0) - (Number(gazoil) || 0);
+      return {
+        ...base,
+        receveur: lecture.receveur || base.receveur,
+        recette: recette === "" ? "" : String(recette),
+        gazoil: gazoil === "" ? "" : String(gazoil),
+        autres: autres === "" ? "" : String(autres),
+        autresNote: lecture.autresNote || "",
+        totalCaisse: recette === "" ? "" : String(caisse),
+        net: recette === "" ? "" : String(caisse - (Number(autres) || 0)),
+        note: lecture.remarque || "",
+      };
+    });
+    toast(
+      lecture.incertitudes.length
+        ? "Capture lue, avec des points à vérifier avant d'enregistrer."
+        : "Capture lue : vérifiez les montants, puis enregistrez.",
+      lecture.incertitudes.length ? "warning" : "success"
+    );
+  };
+
+  // Conserve la capture avec la saisie qui vient d'être enregistrée.
+  const conserverCapture = async (vId, date, blob) => {
+    const chemin = `${vId}/${date}-${Date.now()}.jpg`;
+    const envoi = await supabase.storage.from("justificatifs").upload(chemin, blob, { contentType: "image/jpeg" });
+    if (envoi.error) return envoi.error;
+    const { error } = await supabase.from("entry_justificatifs").insert({
+      vehicle_id: vId, date, nom: `capture-${date}.jpg`, chemin, type_mime: "image/jpeg", taille: blob.size,
+    });
+    return error || null;
+  };
+
+  // Le bucket est privé : on demande un lien signé, valable une minute.
+  const ouvrirJustificatif = async (j) => {
+    const { data, error } = await supabase.storage.from("justificatifs").createSignedUrl(j.chemin, 60);
+    if (error || !data?.signedUrl) return toast("Justificatif indisponible : " + (error?.message || "lien introuvable"), "error");
+    window.open(data.signedUrl, "_blank", "noopener");
+  };
+
   const startEdit = (e) => {
     setEditingDate(e.date);
     setForm(formDe(e));
@@ -146,6 +273,7 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
 
   const cancelEdit = () => {
     setEditingDate(null);
+    retirerCapture();
     setForm(emptyForm(vehicle?.chauffeur, todayISO()));
   };
 
@@ -173,7 +301,17 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
     setSaving(false);
     if (res?.error) return toast("Enregistrement impossible : " + res.error, "error");
 
+    // La capture suit la saisie. Si son stockage n'est pas encore installé,
+    // le versement est enregistré quand même — et on le dit.
+    let captureNonConservee = false;
+    if (capture?.blob) {
+      const erreur = await conserverCapture(vehicleId, form.date, capture.blob);
+      captureNonConservee = Boolean(erreur);
+      retirerCapture();
+    }
+
     if (res?.avertissement) toast(res.avertissement, "warning");
+    else if (captureNonConservee) toast("Versement enregistré, mais la capture n'a pas pu être conservée : exécutez migration_ia.sql dans Supabase.", "warning");
     else toast(editingDate || existante ? "Saisie mise à jour" : "Versement enregistré");
 
     const suivante = ajouterJours(form.date, 1);
@@ -321,12 +459,83 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
                   {editingDate ? <Pencil size={15} color={COLORS.amber} /> : <Plus size={16} color={COLORS.fleet} />}
                   {editingDate ? `Modifier la saisie du ${fmtJour(editingDate, { annee: true })}` : "Nouvelle saisie"}
                 </h2>
-                {editingDate && (
+                {editingDate ? (
                   <button onClick={cancelEdit} className="btn btn-discret btn-petit">
                     <X size={13} /> Annuler
                   </button>
+                ) : (
+                  <button
+                    onClick={() => choixFichier.current?.click()}
+                    disabled={capture?.etat === "lecture"}
+                    className="btn btn-contour btn-petit"
+                    style={{ color: COLORS.fleet }}
+                  >
+                    <ScanLine size={14} /> <span className="hidden sm:inline">Remplir depuis une capture</span><span className="sm:hidden">Capture</span>
+                  </button>
                 )}
+                <input
+                  ref={choixFichier}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; lireCapture(f); }}
+                />
               </div>
+
+              {/* Capture du chauffeur : l'image reste sous les yeux pendant la vérification. */}
+              {capture && (
+                <div className="animate-fondu mb-5 flex gap-3 rounded-xl border border-[var(--border-line)] bg-[var(--bg-surface-alt)] p-3">
+                  <button
+                    type="button"
+                    onClick={() => setAgrandie(true)}
+                    aria-label="Agrandir la capture"
+                    className="group relative h-24 w-[4.5rem] shrink-0 overflow-hidden rounded-lg border border-[var(--border-line)] bg-[var(--bg-muted)]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={capture.apercu} alt="Capture jointe" className="h-full w-full object-cover object-top" />
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-white opacity-0 transition group-hover:bg-black/35 group-hover:opacity-100">
+                      <ZoomIn size={18} />
+                    </span>
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    {capture.etat === "lecture" ? (
+                      <div className="flex items-center gap-2 text-sm font-medium text-[var(--text-ink)]">
+                        <Loader2 size={15} className="animate-spin" color={COLORS.fleet} /> Lecture de la capture…
+                      </div>
+                    ) : capture.lecture?.lisible ? (
+                      <>
+                        <div className="flex items-center gap-1.5 text-sm font-semibold text-[var(--text-ink)]">
+                          <Sparkles size={14} color={COLORS.fleet} /> Rempli depuis la capture
+                        </div>
+                        <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-slate)]">
+                          Vérifiez chaque montant avec l&apos;image avant d&apos;enregistrer. La capture sera conservée avec la saisie.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm font-semibold text-[var(--text-ink)]">Capture jointe</div>
+                        <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-slate)]">
+                          Remplissez les montants à la main. La capture sera conservée avec la saisie.
+                        </p>
+                      </>
+                    )}
+
+                    {capture.lecture?.incertitudes?.length > 0 && (
+                      <ul className="mt-2 flex flex-col gap-1">
+                        {capture.lecture.incertitudes.map((point, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-xs leading-relaxed text-[var(--text-ink)]">
+                            <TriangleAlert size={13} color={COLORS.amber} className="mt-0.5 shrink-0" /> {point}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <button type="button" onClick={retirerCapture} className="mt-2 text-xs font-semibold text-[var(--text-slate)] underline underline-offset-2 hover:text-[var(--red)]">
+                      Retirer la capture
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Champ label="Date">
@@ -582,6 +791,7 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
                               </span>
                             )}
                             {e.note && <MessageSquareText size={12} className="ml-1.5 inline-block align-middle" color={COLORS.fleet} aria-label="Avec remarque" />}
+                            {justificatifs[e.date] && <Paperclip size={12} className="ml-1.5 inline-block align-middle text-[var(--text-slate-light)]" aria-label="Avec justificatif" />}
                           </td>
                           <td className="num">{repos ? "—" : fmt(e.recette)}</td>
                           <td className="num hidden sm:table-cell">{repos ? "—" : fmt((Number(e.gazoil) || 0) + (Number(e.autres) || 0))}</td>
@@ -608,6 +818,11 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
                               )}
 
                               <div className="mt-3 flex flex-wrap gap-2">
+                                {(justificatifs[e.date] || []).map((j, i, tous) => (
+                                  <button key={j.id} onClick={() => ouvrirJustificatif(j)} className="btn btn-contour btn-petit" style={{ color: COLORS.fleet }}>
+                                    <Paperclip size={13} /> Justificatif{tous.length > 1 ? ` ${i + 1}` : ""}
+                                  </button>
+                                ))}
                                 <button onClick={() => startEdit(e)} className="btn btn-contour btn-petit">
                                   <Pencil size={13} /> Modifier
                                 </button>
@@ -635,6 +850,23 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
           )}
         </section>
       </div>
+
+      {/* Capture en grand, pour lire les petits chiffres */}
+      {agrandie && capture && (
+        <div
+          className="animate-fondu fixed inset-0 z-[85] flex items-center justify-center bg-[#0A1626]/80 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Capture jointe"
+          onClick={() => setAgrandie(false)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={capture.apercu} alt="Capture jointe" className="max-h-full max-w-full rounded-xl object-contain" style={{ boxShadow: "var(--shadow-pop)" }} />
+          <button onClick={() => setAgrandie(false)} aria-label="Fermer" className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25">
+            <X size={20} />
+          </button>
+        </div>
+      )}
     </main>
   );
 }

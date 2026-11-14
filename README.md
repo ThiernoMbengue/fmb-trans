@@ -10,7 +10,7 @@ Site de suivi des versements de flotte, accès réservé aux comptes connectés 
 
 1. **Créer le projet Supabase** (base de données + comptes)
 2. **Créer les tables**, dans l'éditeur SQL Supabase, dans cet ordre :
-   `schema.sql` → `migration_avances.sql` → `migration_rapports.sql` → `migration_roles.sql` → `migration_demandes.sql` → `migration_paiements.sql` → `migration_parametres.sql` → `migration_location.sql` → `migration_avances_statut.sql` → `migration_note_saisie.sql` → `migration_carnet.sql`
+   `schema.sql` → `migration_avances.sql` → `migration_rapports.sql` → `migration_roles.sql` → `migration_demandes.sql` → `migration_paiements.sql` → `migration_parametres.sql` → `migration_location.sql` → `migration_avances_statut.sql` → `migration_note_saisie.sql` → `migration_carnet.sql` → `migration_ia.sql`
 3. **Créer le premier compte gestionnaire** (Authentication > Users), puis le passer admin :
    `update profiles set role = 'admin' where id = (select id from auth.users where email = 'ton_email@exemple.com');`
 4. **Ajouter la clé `service_role`** (Project Settings > API) dans `SUPABASE_SERVICE_ROLE_KEY` (local et Vercel) — nécessaire pour créer d'autres comptes depuis l'onglet « Comptes » du site
@@ -23,6 +23,24 @@ Voir la conversation avec Claude pour le détail de chaque étape, ou suivre :
 - Supabase : https://supabase.com
 - Vercel : https://vercel.com
 - GitHub : https://github.com
+
+## Assistant IA et lecture des captures
+
+Deux fonctions s'appuient sur l'API de Claude (Anthropic) :
+
+- **Assistant** — un panneau de discussion, ouvert depuis la barre du haut, qui répond aux questions sur les données (chiffres d'une période, soldes, avances, carnet) et propose les relevés en PDF. Il lit avec le compte de la personne connectée : un propriétaire n'obtient que ses véhicules. Il ne modifie jamais rien.
+- **Remplir depuis une capture** — dans Saisie, on envoie la capture de la conversation WhatsApp du chauffeur ; le formulaire est pré-rempli (véhicule, date, recette, gazoil, autres dépenses), on vérifie puis on enregistre. La capture est conservée comme justificatif de la saisie.
+
+Mise en service :
+
+1. Créer un compte sur la console Anthropic, y ajouter du crédit, puis créer une clé d'API.
+2. Dans Vercel > Settings > Environment Variables, ajouter `ANTHROPIC_API_KEY` (valeur : la clé).
+3. Dans Supabase > SQL Editor, exécuter `supabase/migration_ia.sql`.
+4. Redéployer le site : une variable d'environnement n'est prise en compte qu'au déploiement suivant.
+
+Tant que la clé n'est pas définie, le site fonctionne comme avant et l'assistant reste masqué.
+
+Réglages facultatifs : `ANTHROPIC_MODEL` (par défaut `claude-haiku-5-5`, le modèle le moins cher) et `IA_LIMITE_QUOTIDIENNE` (150 demandes par personne et par jour par défaut). L'usage est suivi dans la table `ia_usage`.
 
 ## Développement local
 

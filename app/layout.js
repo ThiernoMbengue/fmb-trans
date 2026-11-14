@@ -66,7 +66,7 @@ export default async function RootLayout({ children }) {
         <RegisterSW />
         <ToastProvider>
           <ConfirmProvider>
-            <AppShell user={user ? { email: user.email, nom } : null} role={role} vehicles={vehicles}>
+            <AppShell user={user ? { email: user.email, nom } : null} role={role} vehicles={vehicles} iaActive={Boolean(process.env.ANTHROPIC_API_KEY)}>
               {children}
             </AppShell>
           </ConfirmProvider>
