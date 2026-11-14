@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FileText, Loader2, Download, Bus, ReceiptText, HandCoins, Scale, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { lireTout } from "@/lib/supabase/lire-tout";
+import { useVehiculeCourant } from "@/lib/vehicule-courant";
 import { telechargerPDF } from "@/lib/telecharger";
 import { fmtDateLongue, isoLocal, todayISO } from "@/lib/format";
 import { EnTete, Champ, Vide, useToast } from "@/components/ui";
@@ -31,10 +32,10 @@ const RACCOURCIS = [
   { id: "annee", label: "Cette année", plage: () => [`${new Date().getFullYear()}-01-01`, todayISO()] },
 ];
 
-export default function RapportsClient({ vehicles, role }) {
+export default function RapportsClient({ vehicles, role, vehiculeInitial }) {
   const supabase = createClient();
   const toast = useToast();
-  const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
+  const [vehicleId, setVehicleId] = useVehiculeCourant(vehicles, vehiculeInitial);
   const [dateDebut, setDateDebut] = useState(premierDuMois());
   const [dateFin, setDateFin] = useState(todayISO());
   const [docType, setDocType] = useState("versements");
@@ -110,7 +111,7 @@ export default function RapportsClient({ vehicles, role }) {
   const typeChoisi = DOC_TYPES.find((t) => t.id === docType);
 
   return (
-    <main className="page animate-fade-up">
+    <main className="page">
       <EnTete
         titre="Rapports"
         description="Générez un document PDF à partir des données saisies : choisissez le véhicule, la période et le type de document."
@@ -144,12 +145,7 @@ export default function RapportsClient({ vehicles, role }) {
                     type="button"
                     onClick={() => { const [d, f] = r.plage(); setDateDebut(d); setDateFin(f); }}
                     aria-pressed={actif}
-                    className="rounded-full border px-3 py-1.5 text-xs font-medium"
-                    style={{
-                      borderColor: actif ? "var(--fleet-bright)" : "var(--border-line)",
-                      backgroundColor: actif ? "color-mix(in srgb, var(--fleet-bright) 10%, transparent)" : "transparent",
-                      color: actif ? "var(--fleet-bright)" : "var(--text-slate)",
-                    }}
+                    className="puce"
                   >
                     {r.label}
                   </button>

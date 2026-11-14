@@ -29,7 +29,7 @@ export default async function VehiculesPage() {
   );
 
   return (
-    <main className="page animate-fade-up">
+    <main className="page">
       <EnTete
         titre="Véhicules"
         description={

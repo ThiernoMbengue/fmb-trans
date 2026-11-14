@@ -5,7 +5,7 @@
 // que deux pages ne dérivent pas l'une de l'autre.
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, TriangleAlert, X, Loader2, Bus, ChevronDown } from "lucide-react";
+import { AlertCircle, Check, TriangleAlert, X, Loader2, Bus, ChevronDown, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* En-tête de page                                                     */
@@ -13,9 +13,9 @@ import { AlertCircle, CheckCircle2, TriangleAlert, X, Loader2, Bus, ChevronDown 
 
 export function EnTete({ titre, description, actions, children }) {
   return (
-    <header className="mb-5 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 sm:mb-6">
+    <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
       <div className="min-w-0 max-w-2xl">
-        <h1 className="font-display text-[1.4rem] font-bold leading-tight tracking-tight text-[var(--text-ink)] sm:text-2xl">
+        <h1 className="font-display text-[1.5rem] font-bold leading-[1.15] text-[var(--text-ink)] sm:text-[1.7rem]">
           {titre}
         </h1>
         {description && (
@@ -34,10 +34,10 @@ export function EnTete({ titre, description, actions, children }) {
 
 export function Champ({ label, aide, children, className = "" }) {
   return (
-    <label className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
+    <label className={`flex min-w-0 flex-col gap-2 ${className}`}>
       <span className="etiquette">{label}</span>
       {children}
-      {aide && <span className="text-[11px] leading-snug text-[var(--text-slate-light)]">{aide}</span>}
+      {aide && <span className="-mt-0.5 text-xs leading-snug text-[var(--text-slate-light)]">{aide}</span>}
     </label>
   );
 }
@@ -50,28 +50,28 @@ export function SelecteurVehicule({ vehicles, value, onChange, extra, className 
   const courant = vehicles.find((v) => v.id === value);
   return (
     <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 ${className}`}>
-      <div className="relative flex min-w-0 max-w-full items-center gap-2.5 rounded-xl border border-[var(--border-line)] bg-[var(--bg-surface)] py-1.5 pl-2 pr-2 shadow-sm">
-        <div
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-          style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 14%, transparent)" }}
+      <div className="relative flex h-11 min-w-0 max-w-full items-center rounded-[10px] border border-[var(--border-strong)] bg-[var(--bg-surface)] shadow-[0_1px_1px_rgba(15,27,45,0.04)] transition-colors focus-within:border-[var(--fleet-bright)] focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--fleet-bright)_20%,transparent)] hover:border-[color-mix(in_srgb,var(--fleet-bright)_45%,var(--border-strong))] sm:h-10">
+        <span
+          className="pointer-events-none ml-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] sm:h-7 sm:w-7"
+          style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 12%, transparent)" }}
         >
           <Bus size={15} color="var(--fleet-bright)" />
-        </div>
+        </span>
         <select
           aria-label="Véhicule"
           value={value || ""}
           onChange={(e) => onChange(e.target.value)}
-          className="min-w-0 max-w-[62vw] cursor-pointer appearance-none truncate bg-transparent py-1 pr-7 text-base font-semibold text-[var(--text-ink)] focus:outline-none sm:max-w-xs sm:text-sm"
+          className="h-full min-w-0 max-w-[68vw] cursor-pointer appearance-none truncate bg-transparent pl-2.5 pr-9 text-base font-semibold text-[var(--text-ink)] focus:outline-none sm:max-w-xs sm:text-sm"
         >
           {extra}
           {vehicles.map((v) => (
             <option key={v.id} value={v.id}>{v.marque} — {v.immatriculation}</option>
           ))}
         </select>
-        <ChevronDown size={14} className="pointer-events-none absolute right-3 text-[var(--text-slate-light)]" />
+        <ChevronDown size={15} className="pointer-events-none absolute right-3 text-[var(--text-slate-light)]" />
       </div>
       {courant && (courant.proprietaire || courant.chauffeur) && (
-        <div className="min-w-0 truncate text-xs text-[var(--text-slate-light)]">
+        <div className="min-w-0 truncate text-[13px] text-[var(--text-slate-light)]">
           {[courant.proprietaire, courant.chauffeur && `chauffeur ${courant.chauffeur}`].filter(Boolean).join(" · ")}
         </div>
       )}
@@ -80,22 +80,44 @@ export function SelecteurVehicule({ vehicles, value, onChange, extra, className 
 }
 
 /* ------------------------------------------------------------------ */
+/* Sélecteur à segments                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * <Segments label="Période" value={v} onChange={setV}
+ *           options={[{ id: "mois", label: "Mois", compte: 3 }]} />
+ */
+export function Segments({ options, value, onChange, label, etire = false, className = "" }) {
+  // `etire` : sur téléphone, les segments se partagent toute la largeur.
+  return (
+    <div className={`sans-barre max-w-full overflow-x-auto ${className}`}>
+      <div className={`segments ${etire ? "flex w-full sm:inline-flex sm:w-auto" : ""}`} role="tablist" aria-label={label}>
+        {options.map((o) => (
+          <button key={o.id} type="button" role="tab" aria-selected={value === o.id} onClick={() => onChange(o.id)} className={`segment ${etire ? "flex-auto sm:flex-none" : ""}`}>
+            {o.label}
+            {o.compte != null && <span className="ml-1.5 font-normal text-[var(--text-slate-light)]">{o.compte}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* États : vide, chargement                                            */
 /* ------------------------------------------------------------------ */
 
-export function Vide({ icone: Icone, titre, children }) {
+export function Vide({ icone: Icone, titre, children, action }) {
   return (
-    <div className="flex flex-col items-center px-6 py-10 text-center">
+    <div className="flex flex-col items-center px-6 py-12 text-center">
       {Icone && (
-        <div
-          className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl"
-          style={{ backgroundColor: "color-mix(in srgb, var(--text-slate) 10%, transparent)" }}
-        >
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border-line)] bg-[var(--bg-muted)]">
           <Icone size={20} className="text-[var(--text-slate-light)]" />
         </div>
       )}
-      {titre && <div className="text-sm font-semibold text-[var(--text-ink)]">{titre}</div>}
-      {children && <div className="mt-1 max-w-sm text-sm leading-relaxed text-[var(--text-slate-light)]">{children}</div>}
+      {titre && <div className="text-[15px] font-semibold text-[var(--text-ink)]">{titre}</div>}
+      {children && <div className="mt-1.5 max-w-sm text-sm leading-relaxed text-[var(--text-slate)]">{children}</div>}
+      {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }
@@ -117,9 +139,9 @@ export function Chargement({ lignes = 4, className = "" }) {
 const ToastContexte = createContext(() => {});
 
 const TOAST_STYLE = {
-  success: { couleur: "var(--green)", Icone: CheckCircle2, duree: 3000 },
-  warning: { couleur: "var(--amber)", Icone: TriangleAlert, duree: 8000 },
-  error: { couleur: "var(--red)", Icone: AlertCircle, duree: 7000 },
+  success: { couleur: "#12A372", Icone: Check, duree: 3200 },
+  warning: { couleur: "#D08A1E", Icone: TriangleAlert, duree: 8000 },
+  error: { couleur: "#DC4444", Icone: X, duree: 7000 },
 };
 
 export function ToastProvider({ children }) {
@@ -150,13 +172,15 @@ export function ToastProvider({ children }) {
             <div
               key={t.id}
               role={t.type === "error" ? "alert" : "status"}
-              className="animate-pop pointer-events-auto flex max-w-md items-start gap-2.5 rounded-xl py-2.5 pl-3.5 pr-2 text-sm font-medium text-white"
-              style={{ backgroundColor: couleur, boxShadow: "var(--shadow-pop)" }}
+              className="animate-pop pointer-events-auto flex max-w-md items-start gap-3 rounded-xl py-3 pl-3.5 pr-2 text-sm font-medium"
+              style={{ backgroundColor: "#0F1B2D", color: "#F4F6F9", boxShadow: "var(--shadow-pop)", border: "1px solid rgba(255,255,255,0.08)" }}
             >
-              <Icone size={17} className="mt-0.5 shrink-0" />
+              <span className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: couleur }}>
+                <Icone size={13} color="#fff" strokeWidth={2.6} />
+              </span>
               <span className="min-w-0 break-words leading-snug">{t.msg}</span>
-              <button onClick={() => fermer(t.id)} aria-label="Fermer" className="shrink-0 rounded-md p-1 text-white/80 hover:bg-white/15 hover:text-white">
-                <X size={14} />
+              <button onClick={() => fermer(t.id)} aria-label="Fermer" className="-my-0.5 shrink-0 rounded-md p-1 text-white/55 hover:bg-white/10 hover:text-white">
+                <X size={15} />
               </button>
             </div>
           );
@@ -220,16 +244,17 @@ export function ConfirmProvider({ children }) {
       {children}
       {demande && (
         <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="confirm-titre">
-          <div className="animate-fondu absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={() => repondre(false)} />
+          <div className="animate-fondu absolute inset-0 bg-[#0A1626]/50 backdrop-blur-[3px]" onClick={() => repondre(false)} />
           <form
             onSubmit={(e) => { e.preventDefault(); repondre(true); }}
-            className="animate-pop relative w-full rounded-t-3xl border border-[var(--border-line)] bg-[var(--bg-surface)] p-5 sm:max-w-md sm:rounded-2xl sm:p-6"
+            className="animate-pop relative w-full rounded-t-[22px] border border-[var(--border-line)] bg-[var(--bg-surface)] p-5 sm:max-w-md sm:rounded-2xl sm:p-6"
             style={{ boxShadow: "var(--shadow-pop)", paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
           >
+            <div className="mx-auto -mt-2 mb-4 h-1 w-10 rounded-full bg-[var(--border-strong)] sm:hidden" />
             <div className="flex items-start gap-3">
               <div
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-                style={{ backgroundColor: `color-mix(in srgb, ${demande.danger ? "var(--red)" : "var(--fleet-bright)"} 14%, transparent)` }}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+                style={{ backgroundColor: `color-mix(in srgb, ${demande.danger ? "var(--red)" : "var(--fleet-bright)"} 12%, transparent)` }}
               >
                 {demande.danger
                   ? <TriangleAlert size={19} color="var(--red)" />
@@ -281,17 +306,51 @@ export const useConfirm = () => useContext(ConfirmContexte);
 /* Indicateur chiffré                                                  */
 /* ------------------------------------------------------------------ */
 
-export function Indicateur({ icone: Icone, label, valeur, legende, couleur = "var(--fleet-bright)" }) {
+/**
+ * Tuile de chiffre clé. Le chiffre reste à l'encre : la couleur ne sert
+ * qu'à la petite icône, pour distinguer les tuiles d'un coup d'œil.
+ *
+ * `tendance` : { pct, dir: "up" | "down" | "flat", bon: true | false | null }
+ */
+export function Indicateur({ icone: Icone, label, valeur, legende, couleur = "var(--fleet-bright)", tendance, children }) {
   return (
-    <div className="carte relative min-w-0 overflow-hidden p-4">
-      <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: couleur }} />
-      <div className="flex items-center gap-1.5 text-xs text-[var(--text-slate)]">
-        {Icone && <Icone size={13} color={couleur} className="shrink-0" />}
-        <span className="truncate">{label}</span>
+    <div className="carte flex min-w-0 flex-col p-4 sm:p-[1.125rem]">
+      <div className="flex items-start justify-between gap-2">
+        <span className="line-clamp-2 min-w-0 text-[13px] font-medium leading-snug text-[var(--text-slate)]">{label}</span>
+        {Icone && (
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+            style={{ backgroundColor: `color-mix(in srgb, ${couleur} 12%, transparent)` }}
+          >
+            <Icone size={14} color={couleur} strokeWidth={2.2} />
+          </span>
+        )}
       </div>
-      <div className="font-figures mt-1.5 text-lg font-bold tracking-tight text-[var(--text-ink)] sm:text-xl">{valeur}</div>
-      {legende && <div className="mt-0.5 text-[11px] leading-snug text-[var(--text-slate-light)]">{legende}</div>}
+      <div className="mt-2 text-[1.35rem] font-semibold leading-none tracking-[-0.02em] text-[var(--text-ink)] sm:text-[1.6rem]">{valeur}</div>
+      {(tendance || legende) && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--text-slate-light)]">
+          {tendance && <Tendance {...tendance} />}
+          {legende && <span className="min-w-0 leading-snug">{legende}</span>}
+        </div>
+      )}
+      {children && <div className="hidden sm:block">{children}</div>}
     </div>
+  );
+}
+
+/** Variation par rapport à la période précédente : flèche, pourcentage, couleur selon que c'est bon ou non. */
+export function Tendance({ pct, dir, bon }) {
+  const couleur = bon === true ? "var(--green)" : bon === false ? "var(--red)" : "var(--text-slate)";
+  const Icone = dir === "up" ? ArrowUpRight : dir === "down" ? ArrowDownRight : Minus;
+  const texte = `${pct > 0 && dir !== "flat" ? "+" : ""}${pct.toFixed(1).replace(".", ",").replace("-", "−")} %`;
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11.5px] font-semibold"
+      style={{ color: couleur, backgroundColor: `color-mix(in srgb, ${couleur} 11%, transparent)` }}
+    >
+      <Icone size={12} strokeWidth={2.4} />
+      {texte}
+    </span>
   );
 }
 
@@ -307,7 +366,7 @@ export function Tourniquet({ size = 15 }) {
 export function Bandeau({ couleur = "var(--fleet-bright)", icone: Icone = AlertCircle, children, className = "" }) {
   return (
     <div
-      className={`flex items-start gap-2.5 rounded-xl border px-4 py-3 text-xs leading-relaxed text-[var(--text-slate)] ${className}`}
+      className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-[13px] leading-relaxed text-[var(--text-slate)] ${className}`}
       style={{
         borderColor: `color-mix(in srgb, ${couleur} 32%, transparent)`,
         backgroundColor: `color-mix(in srgb, ${couleur} 7%, transparent)`,

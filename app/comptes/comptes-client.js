@@ -147,7 +147,7 @@ export default function ComptesClient({ profiles, currentUserId, serviceKeyConfi
   };
 
   return (
-    <main className="page animate-fade-up">
+    <main className="page">
       <EnTete
         titre="Comptes"
         description="Les accès des propriétaires et des gestionnaires. Une fois le compte créé, rattachez-lui ses véhicules depuis l'onglet « Véhicules »."

@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { saveNote, setNoteStatut, deleteNote, deleteFichier } from "./actions";
 import { TYPES, TYPE_PAR_ID, joursAvant, aSurveiller } from "@/lib/carnet";
 import { fmtF, fmtDate } from "@/lib/format";
+import { iconeDuType } from "@/components/carnet-icones";
 import { EnTete, Champ, Vide, Chargement, Indicateur, useToast, useConfirm } from "@/components/ui";
 
 const COLORS = {
@@ -36,9 +37,10 @@ const formeVide = () => ({
 
 function Pastille({ type }) {
   const t = TYPE_PAR_ID[type] || TYPE_PAR_ID.note;
+  const Icone = iconeDuType(t.id);
   return (
-    <span className="pastille" style={{ backgroundColor: `color-mix(in srgb, ${t.couleur} 14%, transparent)`, color: t.couleur }}>
-      {t.emoji} {t.label}
+    <span className="pastille" style={{ backgroundColor: `color-mix(in srgb, ${t.couleur} 13%, transparent)`, color: t.couleur }}>
+      <Icone size={12} strokeWidth={2.3} /> {t.label}
     </span>
   );
 }
@@ -231,14 +233,8 @@ export default function CarnetClient({ vehicles }) {
 
   const typeActuel = TYPE_PAR_ID[form.type] || TYPE_PAR_ID.note;
 
-  const puce = (actif, couleur) => ({
-    borderColor: actif ? couleur : "var(--border-line)",
-    backgroundColor: actif ? `color-mix(in srgb, ${couleur} 12%, transparent)` : "var(--bg-surface)",
-    color: actif ? couleur : "var(--text-slate)",
-  });
-
   return (
-    <main className="page animate-fade-up">
+    <main className="page">
       <input ref={inputFichier} type="file" className="hidden" onChange={televerser}
         accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" />
 
@@ -260,7 +256,7 @@ export default function CarnetClient({ vehicles }) {
         <Indicateur icone={ArrowUpRight} label="Nous devons" valeur={fmtF(resume.aPayer)} couleur={COLORS.red} />
         <Indicateur
           icone={CalendarClock}
-          label="Échéances sous 30 jours"
+          label="Échéances (30 j)"
           valeur={resume.echeances.length}
           legende={resume.enRetard > 0 ? `dont ${resume.enRetard} en retard` : null}
           couleur={resume.enRetard > 0 ? COLORS.red : COLORS.amber}
@@ -282,19 +278,21 @@ export default function CarnetClient({ vehicles }) {
           </div>
 
           <div className="mb-2 flex flex-wrap gap-2" role="radiogroup" aria-label="Type d'entrée">
-            {TYPES.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                role="radio"
-                aria-checked={form.type === t.id}
-                onClick={() => setForm({ ...form, type: t.id })}
-                className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
-                style={puce(form.type === t.id, t.couleur)}
-              >
-                {t.emoji} {t.label}
-              </button>
-            ))}
+            {TYPES.map((t) => {
+              const Icone = iconeDuType(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.type === t.id}
+                  onClick={() => setForm({ ...form, type: t.id })}
+                  className="puce"
+                >
+                  <Icone size={14} style={{ color: t.couleur }} /> {t.label}
+                </button>
+              );
+            })}
           </div>
           <p className="mb-4 text-xs text-[var(--text-slate-light)]">{typeActuel.aide}</p>
 
@@ -353,18 +351,17 @@ export default function CarnetClient({ vehicles }) {
 
       {/* Filtres */}
       <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="defilement-fin -mx-4 flex min-w-0 gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0 lg:flex-1">
-          <button onClick={() => setFiltreType("tous")} aria-pressed={filtreType === "tous"}
-            className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium" style={puce(filtreType === "tous", COLORS.fleet)}>
+        <div className="sans-barre -mx-4 flex min-w-0 gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0 lg:flex-1">
+          <button onClick={() => setFiltreType("tous")} aria-pressed={filtreType === "tous"} className="puce">
             Tout
           </button>
           {TYPES.map((t) => {
             const n = lignes.filter((l) => l.type === t.id && (voirReglees || l.statut === "ouvert")).length;
             if (!n) return null;
+            const Icone = iconeDuType(t.id);
             return (
-              <button key={t.id} onClick={() => setFiltreType(t.id)} aria-pressed={filtreType === t.id}
-                className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium" style={puce(filtreType === t.id, t.couleur)}>
-                {t.emoji} {t.label} <span className="opacity-60">{n}</span>
+              <button key={t.id} onClick={() => setFiltreType(t.id)} aria-pressed={filtreType === t.id} className="puce">
+                <Icone size={14} style={{ color: t.couleur }} /> {t.label} <span className="font-normal text-[var(--text-slate-light)]">{n}</span>
               </button>
             );
           })}
@@ -426,7 +423,7 @@ export default function CarnetClient({ vehicles }) {
                   </div>
                 </div>
 
-                <h3 className="mt-2 break-words text-[15px] font-semibold leading-snug text-[var(--text-ink)]" style={{ textDecoration: regle ? "line-through" : "none" }}>
+                <h3 className="mt-2 break-words text-[15px] font-semibold leading-snug text-[var(--text-ink)]" style={{ textDecorationLine: regle ? "line-through" : "none" }}>
                   {l.titre}
                 </h3>
 

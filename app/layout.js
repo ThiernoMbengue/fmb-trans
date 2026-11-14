@@ -32,29 +32,41 @@ export const viewport = {
   // marges de sécurité sont gérées par env(safe-area-inset-*).
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#14324D" },
-    { media: "(prefers-color-scheme: dark)", color: "#0A1122" },
+    { media: "(prefers-color-scheme: light)", color: "#FFFFFF" },
+    { media: "(prefers-color-scheme: dark)", color: "#121823" },
   ],
 };
 
-// Appliqué avant le premier rendu, pour éviter un éclair de thème clair.
-// Sans choix enregistré, on suit le réglage du système.
-const SCRIPT_THEME = `try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}`;
+// Appliqué avant le premier rendu, pour éviter un éclair de thème clair ou un
+// menu qui se replie sous les yeux. Sans choix enregistré, le thème suit le
+// réglage du système.
+const SCRIPT_AVANT_RENDU = `try{var d=document.documentElement,t=localStorage.getItem('theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){d.classList.add('dark')}if(localStorage.getItem('menu')==='reduit'){d.dataset.menu='reduit'}}catch(e){}`;
 
 export default async function RootLayout({ children }) {
   const supabase = createClient();
   const { user, role, nom } = await getRole(supabase);
 
+  // La recherche rapide propose les véhicules : la liste est courte, et les
+  // règles d'accès de la base n'y laissent que ceux de la personne connectée.
+  let vehicles = [];
+  if (user) {
+    const { data } = await supabase
+      .from("vehicles")
+      .select("id, marque, immatriculation, proprietaire, chauffeur")
+      .order("created_at", { ascending: true });
+    vehicles = data || [];
+  }
+
   return (
     <html lang="fr" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: SCRIPT_THEME }} />
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_AVANT_RENDU }} />
       </head>
       <body>
         <RegisterSW />
         <ToastProvider>
           <ConfirmProvider>
-            <AppShell user={user ? { email: user.email, nom } : null} role={role}>
+            <AppShell user={user ? { email: user.email, nom } : null} role={role} vehicles={vehicles}>
               {children}
             </AppShell>
           </ConfirmProvider>

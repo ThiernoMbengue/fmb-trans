@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/supabase/role";
+import { vehiculeInitial } from "@/lib/vehicule-initial";
 import { reconcilierFlotte } from "@/lib/avances-reconciliation";
 import PaiementsClient from "./paiements-client";
 
@@ -36,5 +37,5 @@ export default async function PaiementsPage() {
     }
   }
 
-  return <PaiementsClient vehicles={vehicles || []} role={role} />;
+  return <PaiementsClient vehicles={vehicles || []} vehiculeInitial={vehiculeInitial()} role={role} />;
 }

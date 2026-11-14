@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { lireTout } from "@/lib/supabase/lire-tout";
+import { useVehiculeCourant } from "@/lib/vehicule-courant";
 import { fmt, fmtF, fmtJour, fmtPeriode, todayISO, ajouterJours, plageDeJours } from "@/lib/format";
 import { EnTete, SelecteurVehicule, Champ, Bandeau, Vide, Chargement, useToast, useConfirm } from "@/components/ui";
 import { saveEntry, deleteEntry, saveLocationRange } from "./actions";
@@ -55,13 +56,16 @@ function Montant({ value, onChange, className = "", ...rest }) {
   );
 }
 
-export default function SaisieClient({ vehicles }) {
+export default function SaisieClient({ vehicles, vehiculeInitial }) {
   const supabase = createClient();
   const toast = useToast();
   const confirmer = useConfirm();
   const formulaire = useRef(null);
 
-  const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
+  const [vehicleId, setVehicleId] = useVehiculeCourant(vehicles, vehiculeInitial);
+  // Numéro de la dernière demande de chargement : une réponse en retard,
+  // arrivée après un changement de véhicule, est ignorée.
+  const demande = useRef(0);
   const vehicle = vehicles.find((v) => v.id === vehicleId) || null;
 
   const [entries, setEntries] = useState([]);
@@ -87,12 +91,14 @@ export default function SaisieClient({ vehicles }) {
   const [locOverwrite, setLocOverwrite] = useState(false);
   const [locSaving, setLocSaving] = useState(false);
 
-  const loadEntries = async (vId) => {
-    setLoading(true);
+  const loadEntries = async (vId, { silencieux } = {}) => {
+    const numero = ++demande.current;
+    if (!silencieux) setLoading(true);
     // Lecture paginée : un véhicule dépasse 1 000 saisies en moins de trois ans.
     const { data, error } = await lireTout(() =>
       supabase.from("entries").select("*").eq("vehicle_id", vId).order("date", { ascending: true })
     );
+    if (numero !== demande.current) return;
     if (error) toast("Chargement impossible : " + error.message, "error");
     else setEntries(data || []);
     setLoading(false);
@@ -172,7 +178,7 @@ export default function SaisieClient({ vehicles }) {
 
     const suivante = ajouterJours(form.date, 1);
     setEditingDate(null);
-    await loadEntries(vehicleId);
+    await loadEntries(vehicleId, { silencieux: true });
     setForm(emptyForm(vehicle?.chauffeur, suivante > todayISO() ? todayISO() : suivante));
   };
 
@@ -192,7 +198,7 @@ export default function SaisieClient({ vehicles }) {
     if (res?.error) return toast("Suppression impossible : " + res.error, "error");
     toast("Saisie supprimée");
     setLigneOuverte(null);
-    await loadEntries(vehicleId);
+    await loadEntries(vehicleId, { silencieux: true });
     if (editingDate === e.date) cancelEdit();
   };
 
@@ -261,7 +267,7 @@ export default function SaisieClient({ vehicles }) {
     else toast(`${res.count} jour${res.count > 1 ? "s" : ""} de location enregistré${res.count > 1 ? "s" : ""}${ignores ? ` — ${ignores} déjà saisi${ignores > 1 ? "s" : ""}, laissé${ignores > 1 ? "s" : ""} tel${ignores > 1 ? "s" : ""} quel${ignores > 1 ? "s" : ""}` : ""}`);
     setLocDebut(""); setLocFin(""); setLocMontant(""); setLocReceveur(""); setLocNote("Location"); setLocOverwrite(false);
     setLocOpen(false);
-    await loadEntries(vehicleId);
+    await loadEntries(vehicleId, { silencieux: true });
   };
 
   if (!vehicles.length) {
@@ -278,7 +284,7 @@ export default function SaisieClient({ vehicles }) {
   }
 
   return (
-    <main className="page animate-fade-up">
+    <main className="page">
       <EnTete
         titre="Saisie des versements"
         description="Enregistrez la recette et les dépenses de la journée. Le net versé au propriétaire se calcule tout seul."
@@ -367,7 +373,7 @@ export default function SaisieClient({ vehicles }) {
               </div>
 
               {/* Résultat du calcul, modifiable si la caisse réelle diffère. */}
-              <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl bg-[var(--bg-page)] p-3 sm:gap-4 sm:p-4">
+              <div className="mt-4 grid grid-cols-2 items-end gap-3 rounded-xl border border-[var(--border-line)] bg-[var(--bg-surface-alt)] p-3 sm:gap-4 sm:p-4">
                 <Champ label="Total caisse" aide="Recette − gazoil">
                   <Montant value={form.totalCaisse} onChange={(e) => setForm({ ...form, totalCaisse: e.target.value })} />
                 </Champ>

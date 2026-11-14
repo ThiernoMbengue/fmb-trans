@@ -467,7 +467,7 @@ export default function InvestisseurClient({
   const autresVehicules = (flotte || []).filter((v) => v.id !== vehicle.id);
 
   return (
-    <main className="page animate-fade-up flex flex-col gap-4">
+    <main className="page flex flex-col gap-4">
 
       {/* ═══ Résumé exécutif ═══ */}
       <section className="surface-card rounded-3xl p-5 sm:p-7 overflow-hidden relative">

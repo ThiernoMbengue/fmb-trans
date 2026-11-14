@@ -9,6 +9,7 @@ import { savePaiement, deletePaiement } from "./actions";
 import { telechargerPDF } from "@/lib/telecharger";
 import { construireDecomptes, avancesNonAbsorbees } from "@/lib/decomptes";
 import { lireTout } from "@/lib/supabase/lire-tout";
+import { useVehiculeCourant } from "@/lib/vehicule-courant";
 import { fmt, fmtF, fmtDate, todayISO } from "@/lib/format";
 import {
   EnTete, SelecteurVehicule, Champ, Vide, Chargement, Indicateur, Bandeau, useToast, useConfirm,
@@ -50,13 +51,13 @@ function StatutBadge({ statut }) {
   );
 }
 
-export default function PaiementsClient({ vehicles, role }) {
+export default function PaiementsClient({ vehicles, role, vehiculeInitial }) {
   const isAdmin = role === "admin";
   const supabase = createClient();
   const toast = useToast();
   const confirmer = useConfirm();
 
-  const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
+  const [vehicleId, setVehicleId] = useVehiculeCourant(vehicles, vehiculeInitial);
   const [entries, setEntries] = useState([]);
   const [avances, setAvances] = useState([]);
   const [paiements, setPaiements] = useState([]);
@@ -201,7 +202,7 @@ export default function PaiementsClient({ vehicles, role }) {
   }
 
   return (
-    <main className="page animate-fade-up">
+    <main className="page">
       <EnTete
         titre={titre}
         description={
@@ -316,7 +317,7 @@ export default function PaiementsClient({ vehicles, role }) {
               </Vide>
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="grid items-start gap-4 xl:grid-cols-2">
               {decomptes.map((d) => {
                 const lignes = [
                   ["Report du mois précédent", d.report],
@@ -436,7 +437,7 @@ export default function PaiementsClient({ vehicles, role }) {
                         <h4 className="mb-3 text-sm font-semibold text-[var(--text-ink)]">
                           Enregistrer un versement — <span className="capitalize">{d.periodeLabel}</span>
                         </h4>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <Champ label="Date du versement">
                             <input type="date" className="champ" value={form.datePaiement} onChange={(e) => setForm({ ...form, datePaiement: e.target.value })} />
                           </Champ>
@@ -451,7 +452,7 @@ export default function PaiementsClient({ vehicles, role }) {
                           <Champ label="Référence (n° Wave, OM…)">
                             <input className="champ" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="Facultatif" />
                           </Champ>
-                          <Champ label="Note" className="sm:col-span-2 lg:col-span-4">
+                          <Champ label="Note" className="sm:col-span-2">
                             <input className="champ" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Facultatif" />
                           </Champ>
                         </div>

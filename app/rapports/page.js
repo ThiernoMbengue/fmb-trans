@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/supabase/role";
+import { vehiculeInitial } from "@/lib/vehicule-initial";
 import RapportsClient from "./rapports-client";
 
 export const metadata = { title: "Rapports" };
@@ -13,5 +14,5 @@ export default async function RapportsPage() {
     .select("*")
     .order("created_at", { ascending: true });
 
-  return <RapportsClient vehicles={vehicles || []} role={role} />;
+  return <RapportsClient vehicles={vehicles || []} vehiculeInitial={vehiculeInitial()} role={role} />;
 }

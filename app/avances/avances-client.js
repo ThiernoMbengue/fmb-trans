@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Save, Trash2, Loader2, HandCoins, TriangleAlert, Send, Check, X, Clock,
   CheckCircle2, RotateCcw, Bus, Wallet, Plus, CircleHelp, ChevronDown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { lireTout } from "@/lib/supabase/lire-tout";
 import { fmtF, fmtJour, fmtPeriode, todayISO } from "@/lib/format";
-import { EnTete, SelecteurVehicule, Champ, Vide, Chargement, Indicateur, useToast, useConfirm } from "@/components/ui";
+import { useVehiculeCourant } from "@/lib/vehicule-courant";
+import { EnTete, SelecteurVehicule, Segments, Champ, Vide, Chargement, Indicateur, useToast, useConfirm } from "@/components/ui";
 import {
   saveAvance, deleteAvance, setAvanceStatut,
   requestAvance, cancelAvanceRequest, resolveAvanceRequest,
@@ -31,13 +33,16 @@ const estReglee = (r) => r.statut === "regularisee";
 
 const emptyForm = () => ({ date: todayISO(), type: "avance_proprietaire", montant: "", note: "" });
 
-export default function AvancesClient({ vehicles, role }) {
+export default function AvancesClient({ vehicles, role, vehiculeInitial }) {
   const isAdmin = role === "admin";
   const supabase = createClient();
   const toast = useToast();
   const confirmer = useConfirm();
 
-  const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || null);
+  const [vehicleId, setVehicleId] = useVehiculeCourant(vehicles, vehiculeInitial);
+  // Numéro de la dernière demande de chargement : une réponse en retard,
+  // arrivée après un changement de véhicule, est ignorée.
+  const demande = useRef(0);
   const [rows, setRows] = useState([]);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,12 +52,14 @@ export default function AvancesClient({ vehicles, role }) {
   const [resolvingId, setResolvingId] = useState(null);
   const [filtre, setFiltre] = useState("toutes");
 
-  const loadRows = async (vId) => {
-    setLoading(true);
+  const loadRows = async (vId, { silencieux } = {}) => {
+    const numero = ++demande.current;
+    if (!silencieux) setLoading(true);
     const [avancesRes, requestsRes] = await Promise.all([
-      supabase.from("avances").select("*").eq("vehicle_id", vId).order("date", { ascending: false }),
+      lireTout(() => supabase.from("avances").select("*").eq("vehicle_id", vId).order("date", { ascending: false })),
       supabase.from("avance_requests").select("*").eq("vehicle_id", vId).order("created_at", { ascending: false }),
     ]);
+    if (numero !== demande.current) return;
     if (avancesRes.error) toast("Chargement impossible : " + avancesRes.error.message, "error");
     else setRows(avancesRes.data || []);
     if (!requestsRes.error) setRequests(requestsRes.data || []);
@@ -69,7 +76,7 @@ export default function AvancesClient({ vehicles, role }) {
     setSaving(false);
     if (res?.error) { toast(res.error, "error"); return false; }
     if (succes) toast(succes);
-    await loadRows(vehicleId);
+    await loadRows(vehicleId, { silencieux: true });
     return true;
   };
 
@@ -134,7 +141,7 @@ export default function AvancesClient({ vehicles, role }) {
     setResolvingId(null);
     if (res?.error) return toast(res.error, "error");
     toast(decision === "approuvee" ? "Demande approuvée — l'avance est enregistrée" : "Demande refusée");
-    await loadRows(vehicleId);
+    await loadRows(vehicleId, { silencieux: true });
   };
 
   const totals = useMemo(() => {
@@ -182,7 +189,7 @@ export default function AvancesClient({ vehicles, role }) {
   }
 
   return (
-    <main className="page animate-fade-up">
+    <main className="page">
       <EnTete
         titre="Avances et dépenses"
         description={
@@ -340,29 +347,17 @@ export default function AvancesClient({ vehicles, role }) {
         {/* ------------------------------------------------ Historique */}
         <section className="carte min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-line)] px-4 py-3.5 sm:px-5">
-            <h2 className="text-sm font-semibold text-[var(--text-ink)]">Historique</h2>
-            <div className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-line)] bg-[var(--bg-page)] p-1" role="tablist" aria-label="Filtrer">
-              {[
-                { id: "toutes", label: `Toutes ${rows.length}` },
-                { id: "en_cours", label: `En cours ${totals.nbEnCours}` },
-                { id: "reglees", label: `Réglées ${totals.nbReglees}` },
-              ].map((f) => (
-                <button
-                  key={f.id}
-                  role="tab"
-                  aria-selected={filtre === f.id}
-                  onClick={() => setFiltre(f.id)}
-                  className="rounded-lg px-2.5 py-1 text-xs font-semibold"
-                  style={{
-                    backgroundColor: filtre === f.id ? "var(--bg-surface)" : "transparent",
-                    color: filtre === f.id ? COLORS.ink : "var(--text-slate-light)",
-                    boxShadow: filtre === f.id ? "var(--shadow-card)" : "none",
-                  }}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
+            <h2 className="titre-bloc">Historique</h2>
+            <Segments
+              label="Filtrer l'historique"
+              value={filtre}
+              onChange={setFiltre}
+              options={[
+                { id: "toutes", label: "Toutes", compte: rows.length },
+                { id: "en_cours", label: "En cours", compte: totals.nbEnCours },
+                { id: "reglees", label: "Réglées", compte: totals.nbReglees },
+              ]}
+            />
           </div>
 
           {loading ? (
@@ -407,7 +402,7 @@ export default function AvancesClient({ vehicles, role }) {
                       <div className="flex shrink-0 flex-col items-end gap-2">
                         <div
                           className="font-figures whitespace-nowrap text-base font-bold"
-                          style={{ color: r.type === "remboursement" ? COLORS.green : COLORS.ink, textDecoration: reglee ? "line-through" : "none", textDecorationColor: "var(--text-slate-light)" }}
+                          style={{ color: r.type === "remboursement" ? COLORS.green : COLORS.ink, textDecorationLine: reglee ? "line-through" : "none", textDecorationColor: "var(--text-slate-light)" }}
                         >
                           {r.type === "remboursement" ? "+ " : ""}{fmtF(r.montant)}
                         </div>

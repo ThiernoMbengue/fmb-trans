@@ -108,13 +108,15 @@ export default function VehicleCard({ vehicle, owners }) {
       </header>
 
       {!edition ? (
-        <div className="grid grid-cols-1 gap-x-5 gap-y-4 border-t border-[var(--border-line)] px-4 py-4 sm:grid-cols-2 sm:px-5">
+        <div className="grid grid-cols-2 gap-x-5 gap-y-4 border-t border-[var(--border-line)] px-4 py-4 sm:grid-cols-3 sm:px-5">
           <Lecture icone={UserRound} label="Propriétaire" valeur={vehicle.proprietaire} />
-          <Lecture icone={Link2} label="Compte lié">
-            <OwnerSelect vehicleId={vehicle.id} ownerId={vehicle.owner_id} owners={owners} />
-          </Lecture>
           <Lecture icone={CircleUserRound} label="Chauffeur" valeur={vehicle.chauffeur} />
-          <Lecture icone={Banknote} label="Taux chauffeur" valeur={`${fmtF(vehicle.taux_chauffeur ?? 5000)} / jour travaillé`} />
+          <Lecture icone={Banknote} label="Taux / jour" valeur={fmtF(vehicle.taux_chauffeur ?? 5000)} />
+          <div className="col-span-full sm:max-w-sm">
+            <Lecture icone={Link2} label="Compte lié">
+              <OwnerSelect vehicleId={vehicle.id} ownerId={vehicle.owner_id} owners={owners} />
+            </Lecture>
+          </div>
         </div>
       ) : (
         <form
