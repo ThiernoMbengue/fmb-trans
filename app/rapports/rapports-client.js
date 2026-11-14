@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { FileText, Loader2, Download, Bus, ReceiptText, HandCoins, Scale, ShieldCheck } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { lireTout } from "@/lib/supabase/lire-tout";
 import { useVehiculeCourant } from "@/lib/vehicule-courant";
-import { telechargerPDF } from "@/lib/telecharger";
+import { genererDocument, DocumentVide } from "@/lib/documents";
 import { fmtDateLongue, isoLocal, todayISO } from "@/lib/format";
 import { EnTete, Champ, Vide, useToast } from "@/components/ui";
+
+// Correspondance entre les choix de cette page et les documents partagés.
+const TYPE_DOCUMENT = { versements: "releve_versements", avances: "releve_avances", decompte: "decompte_solde" };
 
 const DOC_TYPES = [
   { id: "versements", icone: ReceiptText, label: "Relevé de versements", desc: "Le détail jour par jour : recettes, dépenses et net versé au propriétaire." },
@@ -33,7 +34,6 @@ const RACCOURCIS = [
 ];
 
 export default function RapportsClient({ vehicles, role, vehiculeInitial }) {
-  const supabase = createClient();
   const toast = useToast();
   const [vehicleId, setVehicleId] = useVehiculeCourant(vehicles, vehiculeInitial);
   const [dateDebut, setDateDebut] = useState(premierDuMois());
@@ -47,17 +47,6 @@ export default function RapportsClient({ vehicles, role, vehiculeInitial }) {
     return d === dateDebut && f === dateFin;
   })?.id;
 
-  // Lecture paginée : un relevé sur plusieurs années dépasse vite la limite
-  // de 1 000 lignes de l'API, et le PDF serait tronqué sans avertissement.
-  const lire = async (table) => {
-    const { data, error } = await lireTout(() =>
-      supabase.from(table).select("*").eq("vehicle_id", vehicleId)
-        .gte("date", dateDebut).lte("date", dateFin).order("date", { ascending: true })
-    );
-    if (error) throw error;
-    return data || [];
-  };
-
   const generate = async () => {
     if (!vehicle) return;
     if (!dateDebut || !dateFin) return toast("Indiquez une date de début et une date de fin.", "error");
@@ -65,29 +54,11 @@ export default function RapportsClient({ vehicles, role, vehiculeInitial }) {
 
     setLoading(true);
     try {
-      const filename = `${docType}_${vehicle.immatriculation}_${dateDebut}_${dateFin}.pdf`;
-      let doc = null;
-      // Le générateur de PDF est lourd : il n'est chargé qu'à la demande.
-      const { generateVersementsPDF, generateAvancesPDF, generateDecomptePDF } = await import("@/lib/pdf/report");
-
-      if (docType === "versements") {
-        const entries = await lire("entries");
-        if (!entries.length) return toast("Aucune saisie sur cette période.", "warning");
-        doc = generateVersementsPDF(vehicle, entries, dateDebut, dateFin);
-      } else if (docType === "avances") {
-        const avances = await lire("avances");
-        if (!avances.length) return toast("Aucune avance sur cette période.", "warning");
-        doc = generateAvancesPDF(vehicle, avances, dateDebut, dateFin);
-      } else {
-        const [entries, avances] = await Promise.all([lire("entries"), lire("avances")]);
-        if (!entries.length && !avances.length) return toast("Aucune donnée sur cette période.", "warning");
-        doc = generateDecomptePDF(vehicle, entries, avances, dateDebut, dateFin);
-      }
-
-      await telechargerPDF(doc, filename);
+      await genererDocument({ type: TYPE_DOCUMENT[docType], vehicle, dateDebut, dateFin });
       toast("Document généré");
     } catch (e) {
-      toast("La génération a échoué : " + (e?.message || "erreur inconnue"), "error");
+      if (e instanceof DocumentVide) toast(e.message, "warning");
+      else toast("La génération a échoué : " + (e?.message || "erreur inconnue"), "error");
     } finally {
       setLoading(false);
     }

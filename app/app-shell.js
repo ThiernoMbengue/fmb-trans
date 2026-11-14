@@ -6,12 +6,13 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, ClipboardList, HandCoins, Bus, FileText, Users, Receipt,
   NotebookPen, LogOut, LogIn, Moon, Sun, Search, PanelLeftClose, PanelLeftOpen,
-  LayoutGrid, X, Plus, TrendingUp, FileDown,
+  LayoutGrid, X, Plus, TrendingUp, FileDown, Sparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { initiales } from "@/lib/format";
 import { choisirVehicule } from "@/lib/vehicule-courant";
 import Palette from "@/components/palette";
+import Assistant from "@/components/assistant";
 
 // `onglet` : place dans la barre du bas sur téléphone (les autres pages
 // se trouvent derrière « Plus »).
@@ -268,13 +269,15 @@ function MenuCompte({ user, role, sombre, basculerTheme, onLogout }) {
 /* Gabarit                                                             */
 /* ------------------------------------------------------------------ */
 
-export default function AppShell({ user, role, vehicles = [], children }) {
+export default function AppShell({ user, role, vehicles = [], iaActive = false, children }) {
   const pathname = usePathname();
   const router = useRouter();
   const [sombre, basculerTheme] = useTheme();
   const [enCours, demarrer] = useProgression(pathname);
   const [palette, setPalette] = useState(false);
   const [plus, setPlus] = useState(false);
+  const [assistant, setAssistant] = useState(false);
+  const fermerAssistant = useCallback(() => setAssistant(false), []);
 
   // La recherche rapide se ferme d'elle-même au moment du choix : la fermer
   // ici aussi la refermerait si on la rouvre juste après un changement de page.
@@ -338,6 +341,8 @@ export default function AppShell({ user, role, vehicles = [], children }) {
       id: "page:" + it.href, groupe: "Aller à", label: it.label, icone: it.icon, action: () => aller(it.href),
     }));
     const actions = [
+      // L'assistant n'apparaît qu'une fois sa clé configurée chez l'hébergeur.
+      iaActive && { id: "act:assistant", groupe: "Actions", label: "Demander à l'assistant", detail: "Poser une question sur vos données", icone: Sparkles, motsCles: "ia assistant question aide intelligence chat", action: () => setAssistant(true) },
       role === "admin" && { id: "act:saisie", groupe: "Actions", label: "Saisir un versement", detail: "Recette et dépenses du jour", icone: Plus, motsCles: "nouvelle saisie ajouter recette", action: () => aller("/saisie") },
       role === "admin" && { id: "act:paiement", groupe: "Actions", label: "Enregistrer un paiement", detail: "Régler un décompte mensuel", icone: Receipt, motsCles: "payer proprietaire versement", action: () => aller("/paiements") },
       role === "admin" && { id: "act:carnet", groupe: "Actions", label: "Ajouter une note au carnet", detail: "Dette, échéance, pense-bête", icone: NotebookPen, motsCles: "note dette echeance document", action: () => aller("/carnet") },
@@ -357,7 +362,7 @@ export default function AppShell({ user, role, vehicles = [], children }) {
       },
     }));
     return [...pages, ...actions, ...vehicules];
-  }, [user, tous, role, vehicles, sombre, basculerTheme, logout, aller, pathname]);
+  }, [user, tous, role, vehicles, sombre, basculerTheme, logout, aller, pathname, iaActive]);
 
   // La page de connexion occupe tout l'écran, sans menu.
   if (pathname === "/login") return <>{children}</>;
@@ -426,6 +431,16 @@ export default function AppShell({ user, role, vehicles = [], children }) {
               <button onClick={() => setPalette(true)} aria-label="Rechercher" className="btn-icone nu md:hidden">
                 <Search size={18} />
               </button>
+              {iaActive && <button
+                onClick={() => setAssistant((o) => !o)}
+                aria-label="Assistant"
+                aria-expanded={assistant}
+                title="Assistant"
+                className="flex h-9 items-center gap-1.5 rounded-[9px] px-2 text-sm font-semibold text-[var(--fleet-bright)] hover:bg-[color-mix(in_srgb,var(--fleet-bright)_10%,transparent)] md:px-2.5"
+              >
+                <Sparkles size={17} />
+                <span className="hidden md:inline">Assistant</span>
+              </button>}
               <BoutonTheme sombre={sombre} basculer={basculerTheme} />
               <div className="ml-1.5">
                 <MenuCompte user={user} role={role} sombre={sombre} basculerTheme={basculerTheme} onLogout={logout} />
@@ -531,6 +546,7 @@ export default function AppShell({ user, role, vehicles = [], children }) {
       )}
 
       <Palette ouvert={palette} onFermer={() => setPalette(false)} elements={elementsPalette} />
+      {iaActive && <Assistant ouvert={assistant} onFermer={fermerAssistant} role={role} />}
     </div>
   );
 }

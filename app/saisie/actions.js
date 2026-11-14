@@ -121,6 +121,20 @@ export async function deleteEntry(vehicleId, date) {
 
   if (error) return { error: error.message };
 
+  // Les justificatifs de ce jour partent avec la saisie. Un échec ici ne
+  // doit pas faire croire que la suppression a raté : on l'ignore.
+  try {
+    const { data: pieces } = await supabase
+      .from("entry_justificatifs")
+      .select("id, chemin")
+      .eq("vehicle_id", vehicleId)
+      .eq("date", date);
+    if (pieces?.length) {
+      await supabase.storage.from("justificatifs").remove(pieces.map((p) => p.chemin));
+      await supabase.from("entry_justificatifs").delete().in("id", pieces.map((p) => p.id));
+    }
+  } catch {}
+
   revalidatePath("/saisie");
   revalidatePath("/");
   return { success: true };
