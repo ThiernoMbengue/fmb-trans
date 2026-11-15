@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getRole } from "@/lib/supabase/role";
+import { contextePage } from "@/lib/supabase/contexte";
 import { EnTete } from "@/components/ui";
 import VehicleForm from "./vehicle-form";
 import VehicleCard from "./vehicle-card";
@@ -8,14 +8,14 @@ import VehicleCard from "./vehicle-card";
 export const metadata = { title: "Véhicules" };
 
 export default async function VehiculesPage() {
+  // Le rôle et la liste des comptes sont demandés en même temps. La liste
+  // n'est de toute façon lisible que par un gestionnaire : la base y veille.
   const supabase = createClient();
-  const { role } = await getRole(supabase);
-  if (role !== "admin") redirect("/");
-
-  const [{ data: vehicles }, { data: owners }] = await Promise.all([
-    supabase.from("vehicles").select("*").order("created_at", { ascending: true }),
+  const [{ role, vehicles }, { data: owners }] = await Promise.all([
+    contextePage(),
     supabase.from("profiles").select("id, nom, email").eq("role", "proprietaire").order("nom", { ascending: true }),
   ]);
+  if (role !== "admin") redirect("/");
 
   const liste = vehicles || [];
   const sansCompte = liste.filter((v) => !v.owner_id).length;
@@ -41,7 +41,7 @@ export default async function VehiculesPage() {
         }
       />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,7fr)_minmax(0,4fr)]">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,7fr)_minmax(0,4fr)]">
         <section className="flex min-w-0 flex-col gap-3 xl:order-1">
           {liste.length === 0 ? (
             <div className="carte px-5 py-10 text-center text-sm text-[var(--text-slate-light)]">

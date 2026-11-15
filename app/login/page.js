@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { TrendingUp, ChevronRight, ShieldCheck, BarChart3, FileText } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { contextePage } from "@/lib/supabase/contexte";
 import LoginForm from "./login-form";
 
 export const metadata = { title: "Connexion" };
@@ -16,8 +16,7 @@ export default async function LoginPage({ searchParams }) {
   const next = searchParams?.next || "/";
 
   // Déjà connecté : inutile de redemander le mot de passe.
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { user } = await contextePage();
   if (user) redirect("/");
 
   return (

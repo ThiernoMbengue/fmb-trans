@@ -10,6 +10,7 @@ import { saveNote, setNoteStatut, deleteNote, deleteFichier } from "./actions";
 import { TYPES, TYPE_PAR_ID, joursAvant, aSurveiller } from "@/lib/carnet";
 import { fmtF, fmtDate } from "@/lib/format";
 import { iconeDuType } from "@/components/carnet-icones";
+import { lireCache, ecrireCache, viderCache } from "@/lib/cache-memoire";
 import { EnTete, Champ, Vide, Chargement, Indicateur, useToast, useConfirm } from "@/components/ui";
 
 const COLORS = {
@@ -87,7 +88,13 @@ export default function CarnetClient({ vehicles }) {
   );
 
   const charger = async ({ silencieux } = {}) => {
-    if (!silencieux) setLoading(true);
+    // Un rechargement « silencieux » suit une modification : la mémoire n'est
+    // plus à jour. Sinon, on remontre ce qu'on avait déjà vu, puis on relit.
+    if (silencieux) viderCache();
+    else {
+      const connu = lireCache("carnet:tout");
+      if (connu) { setLignes(connu.lignes); setFichiers(connu.fichiers); setLoading(false); } else setLoading(true);
+    }
     const [l, f] = await Promise.all([
       supabase.from("carnet").select("*").order("created_at", { ascending: false }),
       supabase.from("carnet_fichiers").select("*").order("created_at", { ascending: true }),
@@ -104,6 +111,7 @@ export default function CarnetClient({ vehicles }) {
       setLignes(l.data || []);
     }
     if (!f.error) setFichiers(f.data || []);
+    if (!l.error) ecrireCache("carnet:tout", { lignes: l.data || [], fichiers: f.error ? [] : f.data || [] });
     setLoading(false);
   };
 

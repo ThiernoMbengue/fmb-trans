@@ -9,6 +9,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { lireTout } from "@/lib/supabase/lire-tout";
 import { useVehiculeCourant } from "@/lib/vehicule-courant";
+import { lireCache, ecrireCache, viderCache } from "@/lib/cache-memoire";
 import { fmt, fmtF, fmtJour, fmtPeriode, todayISO, ajouterJours, plageDeJours } from "@/lib/format";
 import { EnTete, SelecteurVehicule, Champ, Bandeau, Vide, Chargement, useToast, useConfirm } from "@/components/ui";
 import { preparerImage } from "@/lib/image";
@@ -103,19 +104,36 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
 
   const loadEntries = async (vId, { silencieux } = {}) => {
     const numero = ++demande.current;
-    if (!silencieux) setLoading(true);
-    // Lecture paginée : un véhicule dépasse 1 000 saisies en moins de trois ans.
-    const { data, error } = await lireTout(() =>
-      supabase.from("entries").select("*").eq("vehicle_id", vId).order("date", { ascending: true })
-    );
-    // Les justificatifs arrivent par une migration : si la table n'existe
-    // pas encore, la saisie fonctionne quand même, sans eux.
-    const pieces = await supabase.from("entry_justificatifs").select("id,date,nom,chemin").eq("vehicle_id", vId);
+    // Un rechargement « silencieux » suit toujours un enregistrement : ce
+    // qu'on avait en mémoire, ici et sur les autres pages, n'est plus à jour.
+    if (silencieux) viderCache();
+    else {
+      // Ce véhicule a déjà été affiché : on le remontre tout de suite, et la
+      // base est relue en arrière-plan.
+      const connu = lireCache(`entries:${vId}`);
+      if (connu) {
+        setEntries(connu);
+        setJustificatifs(lireCache(`justificatifs:${vId}`) || {});
+        setLoading(false);
+      } else setLoading(true);
+    }
+    // Les deux lectures partent ensemble. La première est paginée : un
+    // véhicule dépasse 1 000 saisies en moins de trois ans. La seconde arrive
+    // par une migration : si la table n'existe pas encore, la saisie
+    // fonctionne quand même, sans justificatifs.
+    const [{ data, error }, pieces] = await Promise.all([
+      lireTout(() => supabase.from("entries").select("*").eq("vehicle_id", vId).order("date", { ascending: true })),
+      supabase.from("entry_justificatifs").select("id,date,nom,chemin").eq("vehicle_id", vId),
+    ]);
+    const parDate = {};
+    for (const j of pieces.error ? [] : pieces.data || []) (parDate[j.date] ||= []).push(j);
+    if (!error) {
+      ecrireCache(`entries:${vId}`, data || []);
+      ecrireCache(`justificatifs:${vId}`, parDate);
+    }
     if (numero !== demande.current) return;
     if (error) toast("Chargement impossible : " + error.message, "error");
     else setEntries(data || []);
-    const parDate = {};
-    for (const j of pieces.error ? [] : pieces.data || []) (parDate[j.date] ||= []).push(j);
     setJustificatifs(parDate);
     setLoading(false);
   };
@@ -445,7 +463,7 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
         onChange={(id) => { setVehicleId(id); setEditingDate(null); }}
       />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,10fr)_minmax(0,11fr)]">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,10fr)_minmax(0,11fr)]">
         {/* ------------------------------------------------ Formulaire */}
         <div className="flex min-w-0 flex-col gap-5">
           {form && (
@@ -693,7 +711,7 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
         </div>
 
         {/* ------------------------------------------------ Historique */}
-        <section className="carte min-w-0 overflow-hidden">
+        <section className="carte conteneur min-w-0 overflow-hidden">
           <div className="border-b border-[var(--border-line)] p-4 sm:px-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-ink)]">
@@ -705,13 +723,13 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
               </span>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-[auto_auto_minmax(0,1fr)]">
-              <select aria-label="Mois" value={moisFiltre} disabled={Boolean(dateFiltre)} onChange={(e) => setMoisFiltre(e.target.value)} className="champ px-2.5 sm:px-3">
+            <div className="filtres-historique mt-3">
+              <select aria-label="Mois" value={moisFiltre} disabled={Boolean(dateFiltre)} onChange={(e) => setMoisFiltre(e.target.value)} className="champ min-w-0 px-2.5 sm:px-3">
                 <option value="tous">Tous les mois</option>
                 {moisDisponibles.map((m) => <option key={m} value={m}>{majuscule(fmtPeriode(m))}</option>)}
               </select>
-              <input type="date" aria-label="Aller à une date" title="Aller à une date" value={dateFiltre} onChange={(e) => setDateFiltre(e.target.value)} className="champ px-2.5 sm:px-3" />
-              <div className="relative col-span-2 sm:col-span-1">
+              <input type="date" aria-label="Aller à une date" title="Aller à une date" value={dateFiltre} onChange={(e) => setDateFiltre(e.target.value)} className="champ min-w-0 px-2.5 sm:px-3" />
+              <div className="filtre-recherche relative min-w-0">
                 <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-slate-light)]" />
                 <input
                   type="search"
@@ -753,13 +771,16 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
             )
           ) : (
             <>
+              {/* Dernier recours : si le tableau ne tient vraiment pas, il défile
+                  au lieu d'être coupé. */}
+              <div className="defilement-fin overflow-x-auto">
               <table className="tableau">
                 <thead>
                   <tr>
-                    <th className="w-8 !px-0" />
+                    <th className="w-7 !px-0" />
                     <th className="!pl-1">Date</th>
                     <th className="num">Recette</th>
-                    <th className="num hidden sm:table-cell">Dépenses</th>
+                    <th className="num cq-34">Dépenses</th>
                     <th className="num">Net versé</th>
                   </tr>
                 </thead>
@@ -774,27 +795,35 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
                           className="cursor-pointer hover:bg-[var(--bg-page)]"
                           style={{ color: repos ? "var(--text-slate-light)" : COLORS.ink, backgroundColor: ouverte ? "var(--bg-page)" : undefined }}
                         >
-                          <td className="!px-0 !pl-3">
+                          <td className="!px-0 !pl-2.5">
                             <ChevronRight size={15} className="text-[var(--text-slate-light)]" style={{ transform: ouverte ? "rotate(90deg)" : "none", transition: "transform 160ms ease" }} />
                           </td>
-                          <td className="whitespace-nowrap !pl-1" title={e.date}>
-                            <button
-                              className="text-left"
-                              aria-expanded={ouverte}
-                              onClick={(ev) => { ev.stopPropagation(); setLigneOuverte(ouverte ? null : e.date); }}
-                            >
-                              {fmtJour(e.date)}
-                            </button>
-                            {e.sans_chauffeur && (
-                              <span className="pastille ml-2 align-middle" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 14%, transparent)", color: COLORS.fleet }} title="Location sans chauffeur">
-                                <KeyRound size={10} /> <span className="hidden sm:inline">Location</span>
-                              </span>
-                            )}
-                            {e.note && <MessageSquareText size={12} className="ml-1.5 inline-block align-middle" color={COLORS.fleet} aria-label="Avec remarque" />}
-                            {justificatifs[e.date] && <Paperclip size={12} className="ml-1.5 inline-block align-middle text-[var(--text-slate-light)]" aria-label="Avec justificatif" />}
+                          <td className="!pl-1" title={e.date}>
+                            {/* Les repères passent sous la date quand la place manque,
+                                plutôt que d'élargir la colonne. */}
+                            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                              <button
+                                className="whitespace-nowrap text-left"
+                                aria-expanded={ouverte}
+                                onClick={(ev) => { ev.stopPropagation(); setLigneOuverte(ouverte ? null : e.date); }}
+                              >
+                                {fmtJour(e.date)}
+                              </button>
+                              {(e.sans_chauffeur || e.note || justificatifs[e.date]) && (
+                                <span className="flex shrink-0 items-center gap-1.5">
+                                  {e.sans_chauffeur && (
+                                    <span className="pastille !px-1.5" style={{ backgroundColor: "color-mix(in srgb, var(--fleet-bright) 14%, transparent)", color: COLORS.fleet }} title="Location sans chauffeur">
+                                      <KeyRound size={10} /> <span className="cq-34">Location</span>
+                                    </span>
+                                  )}
+                                  {e.note && <MessageSquareText size={12} color={COLORS.fleet} aria-label="Avec remarque" />}
+                                  {justificatifs[e.date] && <Paperclip size={12} className="text-[var(--text-slate-light)]" aria-label="Avec justificatif" />}
+                                </span>
+                              )}
+                            </span>
                           </td>
                           <td className="num">{repos ? "—" : fmt(e.recette)}</td>
-                          <td className="num hidden sm:table-cell">{repos ? "—" : fmt((Number(e.gazoil) || 0) + (Number(e.autres) || 0))}</td>
+                          <td className="num cq-34">{repos ? "—" : fmt((Number(e.gazoil) || 0) + (Number(e.autres) || 0))}</td>
                           <td className="num font-semibold">{repos ? "Repos" : fmt(e.net)}</td>
                         </tr>
 
@@ -838,6 +867,7 @@ export default function SaisieClient({ vehicles, vehiculeInitial }) {
                   })}
                 </tbody>
               </table>
+              </div>
 
               {historique.length > nbAffichees && (
                 <div className="border-t border-[var(--border-line)] p-3 text-center">

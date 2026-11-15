@@ -162,7 +162,7 @@ export default function ComptesClient({ profiles, currentUserId, serviceKeyConfi
         </Bandeau>
       )}
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         {/* -------------------------------------------- Comptes existants */}
         <section className="carte min-w-0 overflow-hidden">
           <h2 className="flex items-center gap-2 border-b border-[var(--border-line)] px-4 py-3.5 text-sm font-semibold text-[var(--text-ink)] sm:px-5">

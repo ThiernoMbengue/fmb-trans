@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { lireTout } from "@/lib/supabase/lire-tout";
 import { fmtF, fmtJour, fmtPeriode, todayISO } from "@/lib/format";
 import { useVehiculeCourant } from "@/lib/vehicule-courant";
+import { lireCache, ecrireCache, viderCache } from "@/lib/cache-memoire";
 import { EnTete, SelecteurVehicule, Segments, Champ, Vide, Chargement, Indicateur, useToast, useConfirm } from "@/components/ui";
 import {
   saveAvance, deleteAvance, setAvanceStatut,
@@ -54,11 +55,19 @@ export default function AvancesClient({ vehicles, role, vehiculeInitial }) {
 
   const loadRows = async (vId, { silencieux } = {}) => {
     const numero = ++demande.current;
-    if (!silencieux) setLoading(true);
+    const cle = `avances:${vId}`;
+    // Un rechargement « silencieux » suit une modification : ce qu'on avait
+    // en mémoire, ici et ailleurs, n'est plus à jour.
+    if (silencieux) viderCache();
+    else {
+      const connu = lireCache(cle);
+      if (connu) { setRows(connu.rows); setRequests(connu.requests); setLoading(false); } else setLoading(true);
+    }
     const [avancesRes, requestsRes] = await Promise.all([
       lireTout(() => supabase.from("avances").select("*").eq("vehicle_id", vId).order("date", { ascending: false })),
       supabase.from("avance_requests").select("*").eq("vehicle_id", vId).order("created_at", { ascending: false }),
     ]);
+    if (!avancesRes.error) ecrireCache(cle, { rows: avancesRes.data || [], requests: requestsRes.error ? [] : requestsRes.data || [] });
     if (numero !== demande.current) return;
     if (avancesRes.error) toast("Chargement impossible : " + avancesRes.error.message, "error");
     else setRows(avancesRes.data || []);
@@ -267,10 +276,10 @@ export default function AvancesClient({ vehicles, role, vehiculeInitial }) {
         </section>
       )}
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         {/* ------------------------------------------------ Formulaire */}
         {isAdmin ? (
-          <section className="carte p-4 sm:p-6">
+          <section className="carte min-w-0 p-4 sm:p-6">
             <h2 className="mb-5 flex items-center gap-2 text-sm font-semibold text-[var(--text-ink)]">
               <Plus size={16} color={COLORS.fleet} /> Nouvelle ligne
             </h2>
@@ -296,7 +305,7 @@ export default function AvancesClient({ vehicles, role, vehiculeInitial }) {
             </button>
           </section>
         ) : (
-          <section className="carte p-4 sm:p-6">
+          <section className="carte min-w-0 p-4 sm:p-6">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-ink)]">
               <Send size={15} color={COLORS.fleet} /> Demander une avance
             </h2>

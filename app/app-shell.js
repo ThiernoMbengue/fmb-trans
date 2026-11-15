@@ -11,6 +11,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { initiales } from "@/lib/format";
 import { choisirVehicule } from "@/lib/vehicule-courant";
+import { definirPorteeCache, viderCache } from "@/lib/cache-memoire";
 import Palette from "@/components/palette";
 import Assistant from "@/components/assistant";
 
@@ -145,7 +146,7 @@ function MenuLateral({ groupes, pathname }) {
 
   return (
     <aside className="menu-lateral hors-impression fixed inset-y-0 left-0 z-30 hidden flex-col overflow-hidden md:flex">
-      <Link href="/" className="flex h-[3.5rem] shrink-0 items-center gap-3 px-[1.15rem]" aria-label="FMB Trans — tableau de bord">
+      <Link href="/" prefetch className="flex h-[3.5rem] shrink-0 items-center gap-3 px-[1.15rem]" aria-label="FMB Trans — tableau de bord">
         <Logo />
         <span className="menu-libelle min-w-0 leading-tight">
           <span className="font-display block truncate text-[15px] font-bold text-white">FMB Trans</span>
@@ -168,7 +169,7 @@ function MenuLateral({ groupes, pathname }) {
                 const actif = estActif(it.href, pathname);
                 const Icon = it.icon;
                 return (
-                  <Link key={it.href} href={it.href} aria-current={actif ? "page" : undefined} aria-label={it.label} className="menu-lien">
+                  <Link key={it.href} href={it.href} prefetch aria-current={actif ? "page" : undefined} aria-label={it.label} className="menu-lien">
                     <Icon size={18} strokeWidth={actif ? 2.2 : 1.9} className="shrink-0" style={{ color: actif ? "#E3A947" : undefined }} />
                     <span className="menu-libelle truncate">{it.label}</span>
                     <span className="menu-bulle" aria-hidden="true">{it.label}</span>
@@ -272,6 +273,10 @@ function MenuCompte({ user, role, sombre, basculerTheme, onLogout }) {
 export default function AppShell({ user, role, vehicles = [], iaActive = false, children }) {
   const pathname = usePathname();
   const router = useRouter();
+  // La mémoire des données affichées appartient au compte connecté : elle
+  // est vidée dès que ce compte change. Fait pendant le rendu, avant que la
+  // page n'y lise quoi que ce soit.
+  definirPorteeCache(user?.id);
   const [sombre, basculerTheme] = useTheme();
   const [enCours, demarrer] = useProgression(pathname);
   const [palette, setPalette] = useState(false);
@@ -320,6 +325,7 @@ export default function AppShell({ user, role, vehicles = [], iaActive = false, 
         await Promise.all(cles.map((c) => caches.delete(c)));
       }
     } catch {}
+    viderCache();
     router.push("/login");
     router.refresh();
   }, [router]);
@@ -413,7 +419,7 @@ export default function AppShell({ user, role, vehicles = [], iaActive = false, 
         >
           <div className="flex h-14 items-center gap-3 px-4 sm:px-6 lg:px-8">
             {/* Téléphone : la marque. Au-delà, elle est dans le menu latéral. */}
-            <Link href="/" className="flex min-w-0 items-center gap-2.5 md:hidden" aria-label="FMB Trans — tableau de bord">
+            <Link href="/" prefetch className="flex min-w-0 items-center gap-2.5 md:hidden" aria-label="FMB Trans — tableau de bord">
               <Logo taille={32} />
               <span className="font-display truncate text-[15px] font-bold text-[var(--text-ink)]">FMB Trans</span>
             </Link>
@@ -466,6 +472,7 @@ export default function AppShell({ user, role, vehicles = [], iaActive = false, 
               <Link
                 key={it.href}
                 href={it.href}
+                prefetch
                 aria-current={actif ? "page" : undefined}
                 className="flex h-16 flex-col items-center justify-center gap-1 text-[10.5px] font-medium"
                 style={{ color: actif ? "var(--fleet-bright)" : "var(--text-slate-light)" }}
@@ -521,6 +528,7 @@ export default function AppShell({ user, role, vehicles = [], iaActive = false, 
                   <Link
                     key={it.href}
                     href={it.href}
+                    prefetch
                     onClick={() => setPlus(false)}
                     aria-current={actif ? "page" : undefined}
                     className="flex items-center gap-3 rounded-xl border px-3.5 py-3.5 text-sm font-medium"

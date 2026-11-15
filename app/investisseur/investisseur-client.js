@@ -877,7 +877,7 @@ export default function InvestisseurClient({
           <div className="text-xs font-semibold mb-3" style={{ color: COLORS.ink }}>
             Paramètres d&apos;exploitation
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+          <div className="grid grid-cols-1 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
             <ParamField label="Chauffeur" value={chauffeurParJour} onChange={setChauffeurParJour} step={500} suffix="F/jour" />
             <ParamField label="Assurance" value={assuranceMensuelle} onChange={setAssuranceMensuelle} step={1000} suffix="F/mois" />
             <ParamField label="Coût d'un entretien" value={coutEntretien} onChange={setCoutEntretien} step={5000} suffix="F" />

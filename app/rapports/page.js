@@ -1,18 +1,10 @@
-import { createClient } from "@/lib/supabase/server";
-import { getRole } from "@/lib/supabase/role";
+import { contextePage } from "@/lib/supabase/contexte";
 import { vehiculeInitial } from "@/lib/vehicule-initial";
 import RapportsClient from "./rapports-client";
 
 export const metadata = { title: "Rapports" };
 
 export default async function RapportsPage() {
-  const supabase = createClient();
-  const { role } = await getRole(supabase);
-
-  const { data: vehicles } = await supabase
-    .from("vehicles")
-    .select("*")
-    .order("created_at", { ascending: true });
-
-  return <RapportsClient vehicles={vehicles || []} vehiculeInitial={vehiculeInitial()} role={role} />;
+  const { role, vehicles } = await contextePage();
+  return <RapportsClient vehicles={vehicles} role={role} vehiculeInitial={vehiculeInitial()} />;
 }

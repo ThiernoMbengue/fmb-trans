@@ -1,6 +1,6 @@
-// Affiché pendant qu'une page se prépare côté serveur : la navigation répond
-// tout de suite au lieu de sembler figée.
-export default function Loading() {
+// Silhouette d'une page, affichée pendant qu'elle se prépare côté serveur :
+// la navigation répond tout de suite au lieu de sembler figée.
+export default function SquelettePage() {
   return (
     <div className="page" aria-busy="true" aria-label="Chargement de la page">
       <div className="squelette h-8 w-56" />

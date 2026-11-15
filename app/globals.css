@@ -363,6 +363,41 @@ code {
 }
 
 /* -------------------------------------------------------------------------
+   Mise en page selon la place réellement disponible
+   Un tableau placé dans une colonne étroite d'un grand écran manque de place
+   autant que sur un téléphone : on décide donc d'après la largeur du bloc
+   qui le contient, pas d'après celle de l'écran.
+   ------------------------------------------------------------------------- */
+.conteneur { container-type: inline-size; }
+
+/* Masqué quand le bloc est plus étroit que le seuil. */
+@container (max-width: 43.99rem) { .cq-44 { display: none !important; } }
+@container (max-width: 33.99rem) { .cq-34 { display: none !important; } }
+@container (max-width: 25.99rem) { .cq-26 { display: none !important; } }
+/* Affiché seulement dans un bloc étroit. */
+.cq-etroit-seul { display: none; }
+@container (max-width: 25.99rem) { .cq-etroit-seul { display: block; } }
+
+/* Tableau dans un bloc étroit : marges resserrées. */
+@container (max-width: 33.99rem) {
+  .tableau thead th, .tableau tbody td { padding-left: 0.625rem; padding-right: 0.625rem; }
+  .tableau thead th:first-child, .tableau tbody td:first-child { padding-left: 0.875rem; }
+  .tableau thead th:last-child, .tableau tbody td:last-child { padding-right: 0.875rem; }
+}
+
+/* Filtres de l'historique : la recherche passe sur sa propre ligne tant que
+   le bloc est étroit. */
+.filtres-historique { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; }
+.filtres-historique > * { min-width: 0; }
+.filtres-historique > .filtre-recherche { grid-column: 1 / -1; }
+/* Très petit écran : un filtre par ligne. */
+@container (max-width: 19.99rem) { .filtres-historique { grid-template-columns: minmax(0, 1fr); } }
+@container (min-width: 40rem) {
+  .filtres-historique { grid-template-columns: auto auto minmax(0, 1fr); }
+  .filtres-historique > .filtre-recherche { grid-column: auto; }
+}
+
+/* -------------------------------------------------------------------------
    Gabarit : menu latéral, contenu, barres
    ------------------------------------------------------------------------- */
 .menu-lateral {

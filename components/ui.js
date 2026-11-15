@@ -94,7 +94,8 @@ export function Segments({ options, value, onChange, label, etire = false, class
       <div className={`segments ${etire ? "flex w-full sm:inline-flex sm:w-auto" : ""}`} role="tablist" aria-label={label}>
         {options.map((o) => (
           <button key={o.id} type="button" role="tab" aria-selected={value === o.id} onClick={() => onChange(o.id)} className={`segment ${etire ? "flex-auto sm:flex-none" : ""}`}>
-            {o.label}
+            {/* Libellé court sur téléphone, quand le long ne tient pas. */}
+            {o.court ? <><span className="sm:hidden">{o.court}</span><span className="hidden sm:inline">{o.label}</span></> : o.label}
             {o.compte != null && <span className="ml-1.5 font-normal text-[var(--text-slate-light)]">{o.compte}</span>}
           </button>
         ))}
@@ -316,7 +317,7 @@ export function Indicateur({ icone: Icone, label, valeur, legende, couleur = "va
   return (
     <div className="carte flex min-w-0 flex-col p-4 sm:p-[1.125rem]">
       <div className="flex items-start justify-between gap-2">
-        <span className="line-clamp-2 min-w-0 text-[13px] font-medium leading-snug text-[var(--text-slate)]">{label}</span>
+        <span className="line-clamp-2 min-w-0 text-[13px] font-medium leading-snug text-[var(--text-slate)] [overflow-wrap:anywhere]">{label}</span>
         {Icone && (
           <span
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"

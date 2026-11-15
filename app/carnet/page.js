@@ -1,20 +1,12 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { getRole } from "@/lib/supabase/role";
+import { contextePage } from "@/lib/supabase/contexte";
 import CarnetClient from "./carnet-client";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Carnet de bord" };
 
 export default async function CarnetPage() {
-  const supabase = createClient();
-  const { role } = await getRole(supabase);
+  const { role, vehicles } = await contextePage();
   if (role !== "admin") redirect("/");
-
-  const { data: vehicles } = await supabase
-    .from("vehicles")
-    .select("id, marque, immatriculation")
-    .order("created_at", { ascending: true });
-
-  return <CarnetClient vehicles={vehicles || []} />;
+  return <CarnetClient vehicles={vehicles.map(({ id, marque, immatriculation }) => ({ id, marque, immatriculation }))} />;
 }

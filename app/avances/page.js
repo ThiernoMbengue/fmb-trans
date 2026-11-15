@@ -1,17 +1,10 @@
-import { createClient } from "@/lib/supabase/server";
-import { getRole } from "@/lib/supabase/role";
+import { contextePage } from "@/lib/supabase/contexte";
 import { vehiculeInitial } from "@/lib/vehicule-initial";
 import AvancesClient from "./avances-client";
 
 export const metadata = { title: "Avances" };
 
 export default async function AvancesPage() {
-  const supabase = createClient();
-  const { role } = await getRole(supabase);
-  const { data: vehicles } = await supabase
-    .from("vehicles")
-    .select("*")
-    .order("created_at", { ascending: true });
-
-  return <AvancesClient vehicles={vehicles || []} vehiculeInitial={vehiculeInitial()} role={role} />;
+  const { role, vehicles } = await contextePage();
+  return <AvancesClient vehicles={vehicles} role={role} vehiculeInitial={vehiculeInitial()} />;
 }

@@ -1,10 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import {
-  BarChart, Bar, Cell, Area, AreaChart,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from "recharts";
+import dynamic from "next/dynamic";
 import {
   Coins, Wallet, TrendingUp, HandCoins, CalendarCheck, Gauge, Bus, Search,
   MessageSquareText, CalendarClock, ArrowRight, BarChart3, Plus, BellRing,
@@ -16,8 +13,20 @@ import { aSurveiller } from "@/lib/carnet";
 import { iconeDuType } from "@/components/carnet-icones";
 import { lireTout } from "@/lib/supabase/lire-tout";
 import { useVehiculeCourant } from "@/lib/vehicule-courant";
+import { lireCache, ecrireCache } from "@/lib/cache-memoire";
 import { isoLocal, fmt, fmtF, fmtJour, fmtDateLongue } from "@/lib/format";
 import { EnTete, SelecteurVehicule, Segments, Indicateur, Vide, Bandeau } from "@/components/ui";
+
+// La bibliothèque de graphiques est lourde : elle est chargée à part, après
+// le reste de la page, qui s'affiche donc sans l'attendre.
+const GraphiqueBarres = dynamic(() => import("./dashboard-graphiques").then((m) => m.GraphiqueBarres), {
+  ssr: false,
+  loading: () => <div className="squelette h-[260px]" />,
+});
+const Sparkline = dynamic(() => import("./dashboard-graphiques").then((m) => m.Sparkline), {
+  ssr: false,
+  loading: () => <div className="mt-3 h-9" />,
+});
 
 const COLORS = {
   ink: "var(--text-ink)", fleet: "var(--fleet-bright)", amber: "var(--amber)",
@@ -25,13 +34,6 @@ const COLORS = {
   slate: "var(--text-slate)", line: "var(--border-line)",
 };
 
-// Graduations de l'axe : 15000 -> « 15k », 1500000 -> « 1,5M ».
-const fmtAxe = (v) => {
-  const abs = Math.abs(v);
-  if (abs >= 1000000) return `${(v / 1000000).toFixed(abs % 1000000 ? 1 : 0).replace(".", ",")}M`;
-  if (abs >= 1000) return `${Math.round(v / 1000)}k`;
-  return String(v);
-};
 const fmtShortDate = (isoStr) => { const [, m, d] = isoStr.split("-"); return `${d}/${m}`; };
 // Date locale, pas UTC : hors du fuseau GMT (un propriétaire en Europe, par
 // exemple), toISOString() ferait reculer « aujourd'hui » d'un jour.
@@ -65,7 +67,7 @@ const PERIODS = [
   { id: "semaine", label: "Semaine" },
   { id: "mois", label: "Mois" },
   { id: "annee", label: "Année" },
-  { id: "personnalise", label: "Personnalisé" },
+  { id: "personnalise", label: "Personnalisé", court: "Dates" },
 ];
 
 function computeRange(periodType, customStart, customEnd) {
@@ -132,41 +134,12 @@ function tendance(courant, precedent, inverse = false) {
   return { pct: t.pct, dir: t.dir, bon };
 }
 
-function Sparkline({ data }) {
-  if (!data || data.length < 2) return null;
-  return (
-    <div className="-mx-1 -mb-1 mt-3 h-9" aria-hidden="true">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 3, right: 1, left: 1, bottom: 0 }}>
-          <Area type="monotone" dataKey="v" stroke="var(--fleet-bright)" fill="var(--fleet-bright)" fillOpacity={0.1} strokeWidth={1.75} dot={false} isAnimationActive={false} />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 function DetailItem({ label, value, caption }) {
   return (
     <div className="min-w-0 rounded-[10px] border border-[var(--border-line)] bg-[var(--bg-surface-alt)] px-3 py-2.5">
       <div className="text-xs text-[var(--text-slate-light)]">{label}</div>
       <div className="font-figures mt-0.5 text-sm font-semibold text-[var(--text-ink)]">{value}</div>
       {caption && <div className="mt-0.5 break-words text-xs text-[var(--text-slate)]">{caption}</div>}
-    </div>
-  );
-}
-
-function CustomTooltip({ active, payload, label }) {
-  if (!active || !payload || !payload.length) return null;
-  return (
-    <div className="rounded-[10px] border border-[var(--border-line)] bg-[var(--bg-surface)] px-3 py-2.5 text-xs" style={{ boxShadow: "var(--shadow-pop)" }}>
-      <div className="mb-1 text-[var(--text-slate-light)]">{label}</div>
-      {payload.map((p) => (
-        <div key={p.dataKey} className="flex items-center gap-2">
-          <span className="inline-block h-2 w-2 rounded-[3px]" style={{ backgroundColor: p.payload?.[p.dataKey] < 0 ? "var(--red)" : "var(--fleet-bright)" }} />
-          <span className="text-[var(--text-slate)]">{p.name}</span>
-          <span className="font-figures ml-3 font-semibold text-[var(--text-ink)]">{fmtF(p.value)}</span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -188,17 +161,28 @@ export default function DashboardClient({ vehicles, role, vehiculeInitial }) {
 
   useEffect(() => {
     if (role !== "admin") return;
+    // Ce qu'on a déjà vu s'affiche tout de suite ; la base est relue derrière.
+    const connu = lireCache("carnet:ouvert");
+    if (connu) setCarnet(connu);
     // La table peut ne pas exister encore : dans ce cas le bloc reste masqué.
     supabase
       .from("carnet")
       .select("id,type,titre,montant,date_echeance,statut")
       .eq("statut", "ouvert")
-      .then(({ data, error }) => setCarnet(error ? [] : data || []));
+      .then(({ data, error }) => {
+        const lignes = error ? [] : data || [];
+        setCarnet(lignes);
+        ecrireCache("carnet:ouvert", lignes);
+      });
   }, [role]); // eslint-disable-line
 
   useEffect(() => {
     if (!vehicleId) return;
-    setLoading(true);
+    // En revenant sur ce véhicule, ses chiffres s'affichent immédiatement ;
+    // la base est relue en arrière-plan et l'écran mis à jour si besoin.
+    const cle = `entries:${vehicleId}`;
+    const connu = lireCache(cle);
+    if (connu) { setEntries(connu); setLoading(false); } else setLoading(true);
     // Lecture paginée : au-delà de 1 000 lignes, l'API tronque sans prévenir —
     // et « toute la flotte » dépasse vite ce seuil.
     const requete = () =>
@@ -207,8 +191,10 @@ export default function DashboardClient({ vehicles, role, vehiculeInitial }) {
         : supabase.from("entries").select("*").eq("vehicle_id", vehicleId).order("date", { ascending: true });
     let annule = false;
     lireTout(requete).then(({ data }) => {
+      if (data) ecrireCache(cle, data);
       if (annule) return;
-      setEntries(data || []);
+      // En cas d'échec de la relecture, on garde ce qui était affiché.
+      if (data || !connu) setEntries(data || []);
       setLoading(false);
     });
     // Si l'on change de véhicule avant la fin, la réponse en retard est ignorée.
@@ -327,7 +313,7 @@ export default function DashboardClient({ vehicles, role, vehiculeInitial }) {
         }
         actions={
           isAdmin && (
-            <Link href="/saisie" className="btn btn-primaire hidden sm:inline-flex">
+            <Link href="/saisie" prefetch className="btn btn-primaire hidden sm:inline-flex">
               <Plus size={16} /> Saisir un versement
             </Link>
           )
@@ -387,7 +373,7 @@ export default function DashboardClient({ vehicles, role, vehiculeInitial }) {
                   <h2 className="titre-bloc flex items-center gap-2">
                     <BellRing size={16} color={COLORS.amber} /> À surveiller
                   </h2>
-                  <Link href="/carnet" className="inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--fleet-bright)] hover:underline">
+                  <Link href="/carnet" prefetch className="inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--fleet-bright)] hover:underline">
                     Carnet <ArrowRight size={14} />
                   </Link>
                 </div>
@@ -413,7 +399,7 @@ export default function DashboardClient({ vehicles, role, vehiculeInitial }) {
                       const Icone = iconeDuType(l.type);
                       return (
                         <li key={l.id}>
-                          <Link href="/carnet" className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-surface-alt)] sm:px-5">
+                          <Link href="/carnet" prefetch className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-surface-alt)] sm:px-5">
                             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `color-mix(in srgb, ${couleur} 12%, transparent)`, color: couleur }}>
                               <Icone size={15} />
                             </span>
@@ -454,19 +440,7 @@ export default function DashboardClient({ vehicles, role, vehiculeInitial }) {
                   Choisissez une autre période{isAdmin ? ", ou enregistrez un versement" : ""}.
                 </Vide>
               ) : (
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barCategoryGap="28%">
-                    <CartesianGrid stroke="var(--border-line)" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--text-slate-light)" }} axisLine={{ stroke: "var(--border-line)" }} tickLine={false} interval="preserveStartEnd" minTickGap={12} tickMargin={6} />
-                    <YAxis tick={{ fontSize: 11, fill: "var(--text-slate-light)" }} axisLine={false} tickLine={false} width={42} tickFormatter={fmtAxe} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "color-mix(in srgb, var(--text-slate) 9%, transparent)", radius: 6 }} />
-                    <Bar dataKey={metric} radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive animationDuration={420}>
-                      {chartData.map((d, i) => (
-                        <Cell key={i} fill={d[metric] < 0 ? "var(--red)" : "var(--fleet-bright)"} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <GraphiqueBarres data={chartData} metric={metric} />
               )}
             </section>
           </div>
@@ -474,13 +448,13 @@ export default function DashboardClient({ vehicles, role, vehiculeInitial }) {
       )}
 
       {!loading && (
-        <div className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
+        <div className="mt-5 grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
           {/* ---------------------------------- Derniers versements */}
-          <section className="carte min-w-0 overflow-hidden">
+          <section className="carte conteneur min-w-0 overflow-hidden">
             <div className="flex items-center justify-between gap-3 border-b border-[var(--border-line)] px-4 py-3.5 sm:px-5">
               <h2 className="titre-bloc">Derniers versements saisis</h2>
               {isAdmin && (
-                <Link href="/saisie" className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[13px] font-semibold text-[var(--fleet-bright)] hover:underline">
+                <Link href="/saisie" prefetch className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[13px] font-semibold text-[var(--fleet-bright)] hover:underline">
                   Tout voir <ArrowRight size={14} />
                 </Link>
               )}
@@ -495,13 +469,13 @@ export default function DashboardClient({ vehicles, role, vehiculeInitial }) {
                   <thead>
                     <tr>
                       <th>Date</th>
-                      {isAllMode && <th>Véhicule</th>}
-                      <th className="hidden md:table-cell">Receveur</th>
+                      {isAllMode && <th className="cq-26">Véhicule</th>}
+                      <th className="cq-44">Receveur</th>
                       <th className="num">Recette</th>
-                      <th className="num hidden sm:table-cell">Gazoil</th>
-                      <th className="num hidden sm:table-cell">Autres</th>
+                      <th className="num cq-34">Gazoil</th>
+                      <th className="num cq-34">Autres</th>
                       <th className="num">Net versé</th>
-                      <th className="w-10"><span className="sr-only">Remarque</span></th>
+                      <th className="w-9 !px-0"><span className="sr-only">Remarque</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -512,19 +486,25 @@ export default function DashboardClient({ vehicles, role, vehiculeInitial }) {
                       return (
                         <Fragment key={cleLigne(e)}>
                           <tr style={{ color: repos ? "var(--text-slate-light)" : COLORS.ink }}>
-                            <td className="whitespace-nowrap font-medium" title={e.date}>{fmtJour(e.date)}</td>
+                            <td className="font-medium" title={e.date}>
+                              <span className="whitespace-nowrap">{fmtJour(e.date)}</span>
+                              {/* Bloc étroit : le véhicule passe sous la date. */}
+                              {isAllMode && v && (
+                                <span className="cq-etroit-seul truncate text-xs font-normal text-[var(--text-slate-light)]">{v.immatriculation}</span>
+                              )}
+                            </td>
                             {isAllMode && (
-                              <td className="text-[13px] text-[var(--text-slate)]">
+                              <td className="cq-26 text-[13px] text-[var(--text-slate)]">
                                 <span className="whitespace-nowrap">{v ? v.marque : "—"}</span>
-                                {v && <span className="ml-1.5 hidden whitespace-nowrap text-[var(--text-slate-light)] sm:inline">{v.immatriculation}</span>}
+                                {v && <span className="cq-44 ml-1.5 whitespace-nowrap text-[var(--text-slate-light)]">{v.immatriculation}</span>}
                               </td>
                             )}
-                            <td className="hidden text-[var(--text-slate)] md:table-cell">{e.receveur || "—"}</td>
+                            <td className="cq-44 max-w-[9rem] truncate text-[var(--text-slate)]">{e.receveur || "—"}</td>
                             <td className="num">{repos ? "—" : fmt(e.recette)}</td>
-                            <td className="num hidden text-[var(--text-slate)] sm:table-cell">{repos ? "—" : fmt(e.gazoil)}</td>
-                            <td className="num hidden text-[var(--text-slate)] sm:table-cell">{repos ? "—" : fmt(e.autres)}</td>
+                            <td className="num cq-34 text-[var(--text-slate)]">{repos ? "—" : fmt(e.gazoil)}</td>
+                            <td className="num cq-34 text-[var(--text-slate)]">{repos ? "—" : fmt(e.autres)}</td>
                             <td className="num font-semibold">{repos ? "Repos" : fmt(e.net)}</td>
-                            <td className="!px-2 text-center">
+                            <td className="!px-0 !pr-1.5 text-center">
                               {e.note && (
                                 <button
                                   onClick={() => setNoteOuverte(ouverte ? null : cleLigne(e))}

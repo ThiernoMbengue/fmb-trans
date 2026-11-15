@@ -1,20 +1,12 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { getRole } from "@/lib/supabase/role";
+import { contextePage } from "@/lib/supabase/contexte";
 import { vehiculeInitial } from "@/lib/vehicule-initial";
 import SaisieClient from "./saisie-client";
 
 export const metadata = { title: "Saisie" };
 
 export default async function SaisiePage() {
-  const supabase = createClient();
-  const { role } = await getRole(supabase);
+  const { role, vehicles } = await contextePage();
   if (role !== "admin") redirect("/");
-
-  const { data: vehicles } = await supabase
-    .from("vehicles")
-    .select("*")
-    .order("created_at", { ascending: true });
-
-  return <SaisieClient vehicles={vehicles || []} vehiculeInitial={vehiculeInitial()} />;
+  return <SaisieClient vehicles={vehicles} vehiculeInitial={vehiculeInitial()} />;
 }

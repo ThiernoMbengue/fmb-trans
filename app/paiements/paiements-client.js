@@ -5,11 +5,12 @@ import {
   Wallet, Loader2, Save, Trash2, FileText, CheckCircle2, Clock, CircleAlert, Bus, Receipt, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { savePaiement, deletePaiement } from "./actions";
+import { savePaiement, deletePaiement, rattraperStatutsAvances } from "./actions";
 import { telechargerPDF } from "@/lib/telecharger";
 import { construireDecomptes, avancesNonAbsorbees } from "@/lib/decomptes";
 import { lireTout } from "@/lib/supabase/lire-tout";
 import { useVehiculeCourant } from "@/lib/vehicule-courant";
+import { lireCache, ecrireCache, viderCache } from "@/lib/cache-memoire";
 import { fmt, fmtF, fmtDate, todayISO } from "@/lib/format";
 import {
   EnTete, SelecteurVehicule, Champ, Vide, Chargement, Indicateur, Bandeau, useToast, useConfirm,
@@ -67,7 +68,18 @@ export default function PaiementsClient({ vehicles, role, vehiculeInitial }) {
   const [form, setForm] = useState({ datePaiement: todayISO(), montant: "", mode: "especes", reference: "", note: "" });
 
   const charger = async ({ silencieux } = {}) => {
-    if (!silencieux) setLoading(true);
+    // Un rechargement « silencieux » suit un paiement enregistré ou supprimé :
+    // ce qu'on avait en mémoire, ici et ailleurs, n'est plus à jour.
+    if (silencieux) viderCache();
+    else {
+      // Déjà affiché une fois : on remontre tout de suite, et la base est
+      // relue en arrière-plan.
+      const connu = lireCache("paiements:tout");
+      if (connu) {
+        setEntries(connu.entries); setAvances(connu.avances); setPaiements(connu.paiements);
+        setLoading(false);
+      } else setLoading(true);
+    }
     // Lecture paginée : au-delà de 1 000 lignes, l'API tronque sans rien
     // dire, et le décompte serait calculé sur un historique incomplet.
     const [e, a, p] = await Promise.all([
@@ -80,13 +92,20 @@ export default function PaiementsClient({ vehicles, role, vehiculeInitial }) {
     if (!e.error) setEntries(e.data || []);
     if (!a.error) setAvances(a.data || []);
     if (!p.error) setPaiements(p.data || []);
+    if (!erreur) ecrireCache("paiements:tout", { entries: e.data || [], avances: a.data || [], paiements: p.data || [] });
     setLoading(false);
   };
 
-  // Le rattrapage du statut des avances se fait côté serveur, dans page.js,
-  // avant même que cette page ne soit rendue : il n'y a plus qu'à charger.
   useEffect(() => {
     charger();
+    // Rattrapage du statut des avances, en arrière-plan : la page n'attend
+    // pas son résultat pour s'afficher, les décomptes n'en dépendent pas.
+    // Une fois suffit tant que rien n'a été modifié : la mémoire est vidée à
+    // chaque enregistrement, ce qui relance le rattrapage à la visite suivante.
+    if (isAdmin && !lireCache("rattrapage:fait")) {
+      ecrireCache("rattrapage:fait", true);
+      rattraperStatutsAvances().catch(() => {});
+    }
   }, []); // eslint-disable-line
 
   // Solde de chaque véhicule : c'est la vue « qui je dois payer »
@@ -317,7 +336,7 @@ export default function PaiementsClient({ vehicles, role, vehiculeInitial }) {
               </Vide>
             </div>
           ) : (
-            <div className="grid items-start gap-4 xl:grid-cols-2">
+            <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
               {decomptes.map((d) => {
                 const lignes = [
                   ["Report du mois précédent", d.report],

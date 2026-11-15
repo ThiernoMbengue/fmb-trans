@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/supabase/role";
-import { reconcilierAvances } from "@/lib/avances-reconciliation";
+import { reconcilierAvances, reconcilierFlotte } from "@/lib/avances-reconciliation";
 import { revalidatePath } from "next/cache";
 
 async function assertAdmin(supabase) {
@@ -28,6 +28,31 @@ async function synchroniserAvances(supabase, vehicleId) {
 // données tout seul juste après.
 function rafraichir() {
   revalidatePath("/avances");
+}
+
+/**
+ * Rattrapage du statut des avances pour toute la flotte.
+ *
+ * Lancé par la page Paiements une fois affichée, en arrière-plan : il relit
+ * toute la base, et le faire avant l'affichage retardait la page à chaque
+ * visite. L'opération est idempotente — quand il n'y a rien à corriger, le
+ * cas courant, elle ne coûte que trois lectures et aucune écriture.
+ */
+export async function rattraperStatutsAvances() {
+  try {
+    const supabase = createClient();
+    if (!(await assertAdmin(supabase))) return { modifiees: 0 };
+    const { data: vehicles } = await supabase.from("vehicles").select("id");
+    const res = await reconcilierFlotte(supabase, (vehicles || []).map((v) => v.id));
+    const modifiees = (res?.marquees || 0) + (res?.rouvertes || 0);
+    // Rien n'a changé : on ne touche pas aux pages déjà chargées.
+    if (modifiees > 0) rafraichir();
+    return { modifiees };
+  } catch {
+    // Un rattrapage qui échoue n'empêche rien : les décomptes restent justes,
+    // seuls les statuts attendent le prochain passage.
+    return { modifiees: 0 };
+  }
 }
 
 export async function savePaiement(payload) {
